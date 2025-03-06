@@ -119,7 +119,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5175",
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://lemoonapi.cdpos.uz:444/",
+    "https://lemoonapi.cdpos.uz:444",
+    "https://lemoonapi.cdpos.uz"
     # Frontend domeni
 ]
 
