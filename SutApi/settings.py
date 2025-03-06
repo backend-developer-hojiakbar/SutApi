@@ -123,6 +123,10 @@ CORS_ALLOWED_ORIGINS = [
     "https://lemoonapi.cdpos.uz"
     # Frontend domeni
 ]
+CSRF_TRUSTED_ORIGINS = [
+    "https://lemoonapi.cdpos.uz:444",
+    "https://lemoonapi.cdpos.uz"
+]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
