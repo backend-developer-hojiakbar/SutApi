@@ -156,6 +156,9 @@ class MahsulotViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'sku', 'kategoriya__name']
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_serializer_context(self):
+        return {'request': self.request}
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         try:
