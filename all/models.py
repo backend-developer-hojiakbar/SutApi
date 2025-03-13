@@ -60,6 +60,9 @@ class Ombor(models.Model):
     responsible_person = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='owned_warehouses')
     current_stock = models.PositiveIntegerField()
 
+    total_products = models.IntegerField(default=0)
+    transaction_count = models.IntegerField(default=0)
+
     def __str__(self):
         return self.name
 

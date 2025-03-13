@@ -86,6 +86,13 @@ class BirlikSerializer(serializers.ModelSerializer):
 
 
 class MahsulotSerializer(serializers.ModelSerializer):
+    rasm = serializers.SerializerMethodField()
+
+    def get_rasm(self, obj):
+        if obj.rasm:
+            return self.context['request'].build_absolute_uri(obj.rasm.url)
+        return None
+
     class Meta:
         model = Mahsulot
         fields = '__all__'

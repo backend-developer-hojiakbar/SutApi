@@ -128,7 +128,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://lemoonapi.cdpos.uz"
 ]
 
-# Static files (CSS, JavaScript, Images)
+# Static files (CSS, JavaScript, Image
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 import os
 
