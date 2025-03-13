@@ -93,12 +93,12 @@ class MahsulotSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.rasm.url)
-            return f"https://lemoonapi.cdpos.uz:444{obj.rasm.url}"  # Statik URL
+            return f"https://lemoonapi.cdpos.uz:444{obj.rasm.url}"
         return None
 
     class Meta:
         model = Mahsulot
-        fields = '__all__'
+        fields = ['id', 'name', 'sku', 'birlik', 'kategoriya', 'narx', 'rasm']
 
     def validate_name(self, value):
         if len(value) < 3:
