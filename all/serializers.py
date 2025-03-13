@@ -90,7 +90,10 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     def get_rasm(self, obj):
         if obj.rasm:
-            return self.context['request'].build_absolute_uri(obj.rasm.url)
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.rasm.url)
+            return f"https://lemoonapi.cdpos.uz:444{obj.rasm.url}"  # Agar request bo‘lmasa, statik URL
         return None
 
     class Meta:
