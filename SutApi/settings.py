@@ -153,7 +153,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication', # JWT autentifikatsiya
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 1000,
     'MAX_PAGE_SIZE': 10000,
     'PAGINATE_BY_PARAM': 'page_size',
     'PAGINATE_BY': 20,
