@@ -105,7 +105,7 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     def validate_narx(self, value):
         if value <= 0:
-            raise serializers.ValidationError("Mahsulot narxi 0 dan katta bo'lishi kerak.")
+            raise serializers.ValidationError("Mahsulot narxi 0 dan katta bo'lishi keraklidir.")
         return value
 
 
