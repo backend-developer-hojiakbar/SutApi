@@ -137,6 +137,29 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
         return purchase
 
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+
+        # Eski items ni o‘chirish
+        instance.items.all().delete()
+
+        # Yangi ma'lumotlarni yangilash
+        instance.ombor = validated_data.get('ombor', instance.ombor)
+        instance.sana = validated_data.get('sana', instance.sana)
+        instance.yetkazib_beruvchi = validated_data.get('yetkazib_beruvchi', instance.yetkazib_beruvchi)
+        instance.save()
+
+        # Yangi items ni qo‘shish
+        total_sum = 0
+        if items_data:
+            for item_data in items_data:
+                purchase_item = PurchaseItem.objects.create(purchase=instance, **item_data)
+                total_sum += purchase_item.soni * purchase_item.narx
+
+        instance.total_sum = total_sum
+        instance.save()
+        return instance
+
 
 class SotuvItemSerializer(serializers.ModelSerializer):
     class Meta:

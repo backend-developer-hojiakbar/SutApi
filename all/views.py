@@ -12,6 +12,7 @@ from datetime import datetime
 from .permissions import CanCreateShopPermission  # Yangi ruxsat sinfi import qilinadi
 from rest_framework.pagination import PageNumberPagination
 from django.conf import settings
+from django.db import transaction
 
 class CustomPagination(PageNumberPagination):
     def get_paginated_response(self, data):
@@ -192,19 +193,60 @@ class MahsulotViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PurchaseViewSet(viewsets.ModelViewSet):
-    queryset = Purchase.objects.all().order_by('id')
+    queryset = Purchase.objects.all()
     serializer_class = PurchaseSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+    def reverse_warehouse_stock(self, purchase):
+        """Purchase o‘chirilganda yoki tahrirlanganda eski zaxirani qaytarish"""
+        with transaction.atomic():
+            for item in purchase.items.all():
+                try:
+                    warehouse_product = OmborMahsulot.objects.get(
+                        ombor=purchase.ombor,
+                        mahsulot=item.mahsulot
+                    )
+                    warehouse_product.soni -= item.soni
+                    if warehouse_product.soni < 0:
+                        raise ValueError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
+                    warehouse_product.save()
+                except OmborMahsulot.DoesNotExist:
+                    continue  # Agar mahsulot omborda bo‘lmasa, o‘tib ketamiz
+
+    def update_warehouse_stock(self, purchase_data, ombor_id):
+        """Yangi zaxirani qo‘shish"""
+        with transaction.atomic():
+            for item in purchase_data['items']:
+                mahsulot_id = item['mahsulot']
+                soni = item['soni']
+                warehouse_product, created = OmborMahsulot.objects.get_or_create(
+                    ombor_id=ombor_id,
+                    mahsulot_id=mahsulot_id,
+                    defaults={'soni': 0}
+                )
+                warehouse_product.soni += soni
+                warehouse_product.save()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.reverse_warehouse_stock(instance)  # Ombordan sonni ayirish
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    def perform_create(self, serializer):
-        serializer.save()
+        with transaction.atomic():
+            # Eski zaxirani qaytarish (sonni ayirish)
+            self.reverse_warehouse_stock(instance)
+            # Eski item'larni o‘chirish
+            instance.items.all().delete()
+            # Yangi ma'lumotni saqlash va zaxirani yangilash (sonni qo‘shish)
+            self.perform_update(serializer)
+            self.update_warehouse_stock(serializer.validated_data, instance.ombor_id)
+
+        return Response(serializer.data)
 
 class SotuvViewSet(viewsets.ModelViewSet):
     queryset = Sotuv.objects.all().order_by('id')
