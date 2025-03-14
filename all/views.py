@@ -10,6 +10,27 @@ from django.db.models.functions import TruncMonth
 from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import datetime
 from .permissions import CanCreateShopPermission  # Yangi ruxsat sinfi import qilinadi
+from rest_framework.pagination import PageNumberPagination
+from django.conf import settings
+
+class CustomPagination(PageNumberPagination):
+    def get_paginated_response(self, data):
+        base_url = settings.BASE_URL  # 'https://lemoonapi.cdpos.uz:444'
+        next_link = self.get_next_link()
+        previous_link = self.get_previous_link()
+
+        # Noto‘g‘ri domenni to‘g‘rilash
+        if next_link:
+            next_link = next_link.replace('http://127.0.0.1:1111', base_url)
+        if previous_link:
+            previous_link = previous_link.replace('http://127.0.0.1:1111', base_url)
+
+        return Response({
+            'count': self.page.paginator.count,
+            'next': next_link,
+            'previous': previous_link,
+            'results': data
+        })
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -155,6 +176,7 @@ class MahsulotViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'sku', 'kategoriya__name']
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = CustomPagination  # Custom pagination qo‘shildi
 
     def get_serializer_context(self):
         return {'request': self.request}

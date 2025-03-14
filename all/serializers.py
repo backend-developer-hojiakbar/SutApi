@@ -90,10 +90,8 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     def get_rasm(self, obj):
         if obj.rasm:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.rasm.url)
-            return f"https://lemoonapi.cdpos.uz:444{obj.rasm.url}"
+            base_url = 'https://lemoonapi.cdpos.uz:444'  # Statik domen
+            return f"{base_url}{obj.rasm.url}"
         return None
 
     class Meta:

@@ -142,6 +142,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+BASE_URL = 'https://lemoonapi.cdpos.uz:444'
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
@@ -153,7 +154,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication', # JWT autentifikatsiya
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 1000,
+    'PAGE_SIZE': 10,  # Agar barcha mahsulotlarni bir sahifada ko‘rmoqchi bo‘lsangiz, bu qiymatni oshiring (masalan, 1000)
     'MAX_PAGE_SIZE': 10000,
     'PAGINATE_BY_PARAM': 'page_size',
     'PAGINATE_BY': 20,
