@@ -1,0 +1,21 @@
+# SQLite ma'lumotlar bazasi
+*.sqlite
+*.sqlite3
+*.db
+
+# Python fayllari
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Muhit fayllari
+.env
+
+# IDE va muharrir fayllari
+.vscode/
+.idea/
+*.swp
+
+# Log fayllari
+*.log
