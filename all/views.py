@@ -227,10 +227,17 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 warehouse_product.save()
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.reverse_warehouse_stock(instance)  # Ombordan sonni ayirish
-        instance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        try:
+            instance = self.get_object()
+            self.reverse_warehouse_stock(instance)  # Ombordan sonni ayirish
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except OmborMahsulot.DoesNotExist:
+            return Response({"detail": "Omborda mahsulot topilmadi, o‘chirish imkonsiz"}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": f"O‘chirishda xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
