@@ -1,6 +1,6 @@
 from rest_framework import viewsets, permissions, filters, status, views, response
-from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, OmborMahsulot
-from .serializers import UserSerializer, OmborSerializer, KategoriyaSerializer, BirlikSerializer, MahsulotSerializer, PurchaseSerializer, PurchaseItemSerializer, SotuvSerializer, SotuvItemSerializer, PaymentSerializer, LoginSerializer, OmborMahsulotSerializer, TokenSerializer, LogoutSerializer
+from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, OmborMahsulot, SotuvQaytarishItem, SotuvQaytarish
+from .serializers import UserSerializer, OmborSerializer, KategoriyaSerializer, BirlikSerializer, MahsulotSerializer, PurchaseSerializer, PurchaseItemSerializer, SotuvSerializer, SotuvItemSerializer, PaymentSerializer, LoginSerializer, OmborMahsulotSerializer, TokenSerializer, LogoutSerializer, SotuvQaytarishSerializer, SotuvQaytarishItemSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -332,3 +332,68 @@ class TokenAPIView(views.APIView):
             return response.Response(serializer.validated_data, status=status.HTTP_200_OK)
         else:
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SotuvQaytarishViewSet(viewsets.ModelViewSet):
+    queryset = SotuvQaytarish.objects.all().order_by('id')
+    serializer_class = SotuvQaytarishSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def reverse_warehouse_stock(self, sotuv_qaytarish):
+        """Qaytarish o‘chirilganda ombor zaxirasini qayta tiklash"""
+        qaytaruvchi = sotuv_qaytarish.qaytaruvchi
+        qaytarish_ombor = sotuv_qaytarish.ombor
+
+        try:
+            qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
+        except Ombor.DoesNotExist:
+            raise ValueError("Qaytaruvchiga bog‘langan ombor topilmadi.")
+
+        with transaction.atomic():
+            for item in sotuv_qaytarish.items.all():
+                # Qaytaruvchi omboriga mahsulotlarni qaytarish
+                ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                    ombor=qaytaruvchi_ombor,
+                    mahsulot=item.mahsulot,
+                    defaults={'soni': 0}
+                )
+                ombor_mahsulot.soni += item.soni
+                ombor_mahsulot.save()
+
+                # Qaytarish omboridan mahsulotlarni ayirish
+                try:
+                    qaytarish_ombor_mahsulot = OmborMahsulot.objects.get(
+                        ombor=qaytarish_ombor,
+                        mahsulot=item.mahsulot
+                    )
+                    qaytarish_ombor_mahsulot.soni -= item.soni
+                    if qaytarish_ombor_mahsulot.soni < 0:
+                        raise ValueError(f"{item.mahsulot.name} uchun qaytarish omborda yetarli mahsulot yo‘q")
+                    qaytarish_ombor_mahsulot.save()
+                except OmborMahsulot.DoesNotExist:
+                    raise ValueError(f"{item.mahsulot.name} qaytarish omborda topilmadi")
+
+            # Balansni qayta tiklash
+            qaytaruvchi.balance = float(qaytaruvchi.balance) - float(sotuv_qaytarish.total_sum)
+            qaytaruvchi.save()
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            self.reverse_warehouse_stock(instance)
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": f"O‘chirishda xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
