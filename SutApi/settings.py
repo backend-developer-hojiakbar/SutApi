@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     'rest_framework_simplejwt',
     'corsheaders',
+    'django_filters',
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
 ]
@@ -153,6 +154,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication', # JWT autentifikatsiya
     ],
+    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,  # Agar barcha mahsulotlarni bir sahifada ko‘rmoqchi bo‘lsangiz, bu qiymatni oshiring (masalan, 1000)
     'MAX_PAGE_SIZE': 10000,

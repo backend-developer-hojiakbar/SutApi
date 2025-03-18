@@ -204,7 +204,7 @@ class PurchaseItem(models.Model):
 
 
 class Sotuv(models.Model):
-    id = models.BigAutoField(primary_key=True, editable=False)  # ID faqat o'qish uchun
+    id = models.BigAutoField(primary_key=True, editable=False)
     sana = models.DateField(auto_now_add=True)
     sotib_oluvchi = models.ForeignKey('all.User', on_delete=models.CASCADE)
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -226,12 +226,10 @@ class Sotuv(models.Model):
         super().save(update_fields=['total_sum'])
 
     def delete(self, *args, **kwargs):
-        # Sotuv o‘chirilganda sotib oluvchining balansini tiklash
         if self.total_sum > 0 and self.sotib_oluvchi:
             self.sotib_oluvchi.balance += self.total_sum
             self.sotib_oluvchi.save()
 
-        # Mahsulotlar sonini omborda qaytarish
         for item in self.items.all():
             ombor_mahsulot = OmborMahsulot.objects.filter(
                 ombor=self.ombor,
@@ -241,7 +239,6 @@ class Sotuv(models.Model):
                 ombor_mahsulot.soni += item.soni
                 ombor_mahsulot.save()
 
-        # Sotib oluvchining omboriga qo‘shilgan mahsulotlarni ayirish
         if self.sotib_oluvchi.user_type in ['dealer', 'shop']:
             sotib_oluvchi_ombor = Ombor.objects.filter(responsible_person=self.sotib_oluvchi).first()
             if sotib_oluvchi_ombor:
@@ -256,7 +253,6 @@ class Sotuv(models.Model):
 
         super().delete(*args, **kwargs)
 
-
 class SotuvItem(models.Model):
     sotuv = models.ForeignKey(Sotuv, on_delete=models.CASCADE, related_name='items')
     mahsulot = models.ForeignKey('Mahsulot', on_delete=models.CASCADE)
@@ -270,7 +266,6 @@ class SotuvItem(models.Model):
         if not self.sotuv.ombor:
             raise ValidationError("Sotuv uchun ombor belgilanmagan!")
 
-        # Sotuvchi ombordan mahsulotni ayirish
         ombor_mahsulot = OmborMahsulot.objects.filter(
             ombor=self.sotuv.ombor,
             mahsulot=self.mahsulot
@@ -284,7 +279,6 @@ class SotuvItem(models.Model):
         ombor_mahsulot.soni -= self.soni
         ombor_mahsulot.save()
 
-        # Sotib oluvchiga bog'langan omborga mahsulot qo'shish
         sotib_oluvchi = self.sotuv.sotib_oluvchi
         if sotib_oluvchi.user_type in ['dealer', 'shop']:
             sotib_oluvchi_ombor = Ombor.objects.filter(responsible_person=sotib_oluvchi).first()
@@ -300,7 +294,6 @@ class SotuvItem(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        # Mahsulot sonini sotuvchi omboriga qaytarish
         ombor_mahsulot = OmborMahsulot.objects.filter(
             ombor=self.sotuv.ombor,
             mahsulot=self.mahsulot
@@ -309,7 +302,6 @@ class SotuvItem(models.Model):
             ombor_mahsulot.soni += self.soni
             ombor_mahsulot.save()
 
-        # Sotib oluvchining omboridan mahsulotni ayirish
         sotib_oluvchi = self.sotuv.sotib_oluvchi
         if sotib_oluvchi.user_type in ['dealer', 'shop']:
             sotib_oluvchi_ombor = Ombor.objects.filter(responsible_person=sotib_oluvchi).first()
@@ -322,17 +314,14 @@ class SotuvItem(models.Model):
                     ombor_mahsulot_sotib_oluvchi.soni -= self.soni
                     ombor_mahsulot_sotib_oluvchi.save()
 
-        # Sotuvning umumiy summasini yangilash (agar zarur bo‘lsa)
         self.sotuv.total_sum = self.sotuv.calculate_total_sum()
         self.sotuv.save(update_fields=['total_sum'])
 
-        # Sotib oluvchining balansini tiklash (agar zarur bo‘lsa)
         if self.sotuv.total_sum > 0 and self.sotuv.sotib_oluvchi:
             self.sotuv.sotib_oluvchi.balance += self.narx * self.soni
             self.sotuv.sotib_oluvchi.save()
 
         super().delete(*args, **kwargs)
-
 
 class Payment(models.Model):
     TYPE_PAYMENTS = (

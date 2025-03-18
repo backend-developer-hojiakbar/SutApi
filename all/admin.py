@@ -75,8 +75,8 @@ class SotuvItemInline(admin.TabularInline):
 class SotuvAdmin(admin.ModelAdmin):
     list_display = ('sana', 'sotib_oluvchi', 'total_sum', 'ombor')
     inlines = [SotuvItemInline]
-    fields = ('sotib_oluvchi', 'ombor')  # total_sum ni olib tashladim
-    readonly_fields = ('total_sum',)  # total_sum faqat o'qish uchun
+    fields = ('sotib_oluvchi', 'ombor')
+    readonly_fields = ('total_sum',)
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)

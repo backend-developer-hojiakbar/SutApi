@@ -13,6 +13,8 @@ from .permissions import CanCreateShopPermission  # Yangi ruxsat sinfi import qi
 from rest_framework.pagination import PageNumberPagination
 from django.conf import settings
 from django.db import transaction
+from django_filters.rest_framework import DjangoFilterBackend
+
 
 class CustomPagination(PageNumberPagination):
     def get_paginated_response(self, data):
@@ -255,10 +257,37 @@ class PurchaseViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.data)
 
+
 class SotuvViewSet(viewsets.ModelViewSet):
     queryset = Sotuv.objects.all().order_by('id')
     serializer_class = SotuvSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        today = datetime.date.today()
+
+        # Filtrlarni qo‘shimcha qo‘shish
+        date_filter = self.request.query_params.get('date_filter', None)
+        if date_filter:
+            if date_filter == 'today':
+                queryset = queryset.filter(sana__date=today)
+            elif date_filter == 'yesterday':
+                yesterday = today - datetime.timedelta(days=1)
+                queryset = queryset.filter(sana__date=yesterday)
+            elif date_filter == 'last_7_days':
+                last_7_days = today - datetime.timedelta(days=6)
+                queryset = queryset.filter(sana__date__range=[last_7_days, today])
+            elif date_filter == 'this_month':
+                first_day_of_month = today.replace(day=1)
+                queryset = queryset.filter(sana__date__range=[first_day_of_month, today])
+            elif date_filter == 'this_year':
+                first_day_of_year = today.replace(month=1, day=1)
+                queryset = queryset.filter(sana__date__range=[first_day_of_year, today])
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -334,10 +363,37 @@ class TokenAPIView(views.APIView):
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     queryset = SotuvQaytarish.objects.all().order_by('id')
     serializer_class = SotuvQaytarishSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        today = datetime.date.today()
+
+        # Filtrlarni qo‘shimcha qo‘shish
+        date_filter = self.request.query_params.get('date_filter', None)
+        if date_filter:
+            if date_filter == 'today':
+                queryset = queryset.filter(sana__date=today)
+            elif date_filter == 'yesterday':
+                yesterday = today - datetime.timedelta(days=1)
+                queryset = queryset.filter(sana__date=yesterday)
+            elif date_filter == 'last_7_days':
+                last_7_days = today - datetime.timedelta(days=6)
+                queryset = queryset.filter(sana__date__range=[last_7_days, today])
+            elif date_filter == 'this_month':
+                first_day_of_month = today.replace(day=1)
+                queryset = queryset.filter(sana__date__range=[first_day_of_month, today])
+            elif date_filter == 'this_year':
+                first_day_of_year = today.replace(month=1, day=1)
+                queryset = queryset.filter(sana__date__range=[first_day_of_year, today])
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
