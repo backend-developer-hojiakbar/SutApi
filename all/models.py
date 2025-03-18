@@ -373,24 +373,23 @@ class SotuvQaytarish(models.Model):
         return sum(item.soni * item.narx for item in self.items.all())
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None  # Yangi obyekt ekanligini tekshirish
+        is_new = self.pk is None
         with transaction.atomic():
-            super().save(*args, **kwargs)  # Avval obyektni saqlash
+            super().save(*args, **kwargs)
             total_sum = self.calculate_total_sum()
             self.total_sum = total_sum
-            if is_new and self.total_sum > 0 and self.qaytaruvchi:  # Faqat yangi obyekt uchun balansni qo‘shish
+            if is_new and self.total_sum > 0 and self.qaytaruvchi:
                 self.qaytaruvchi.balance += self.total_sum
                 self.qaytaruvchi.save()
-            super().save(update_fields=['total_sum'])  # Faqat total_sum ni yangilash
+            super().save(update_fields=['total_sum'])
 
     def delete(self, *args, **kwargs):
         with transaction.atomic():
             total_sum = self.total_sum
             if total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance -= total_sum  # Faqat bir marta ayirish
+                self.qaytaruvchi.balance -= total_sum
                 self.qaytaruvchi.save()
 
-            # Qaytarish omboridan mahsulotlarni o‘chirish
             for item in self.items.all():
                 ombor_mahsulot = OmborMahsulot.objects.filter(
                     ombor=self.ombor,
@@ -402,7 +401,6 @@ class SotuvQaytarish(models.Model):
                         raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
                     ombor_mahsulot.save()
 
-            # Qaytaruvchi omboriga mahsulotlarni qaytarish
             qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
             if qaytaruvchi_ombor:
                 for item in self.items.all():
@@ -427,7 +425,8 @@ class SotuvQaytarishItem(models.Model):
         return f"{self.mahsulot.name} - {self.soni} dona"
 
     def save(self, *args, **kwargs):
-        if not self.sotuv_qaytarish.pk:  # Agar asosiy obyekt hali saqlanmagan bo‘lsa, xatolik chiqarish
+        is_new = self.pk is None  # Yangi obyekt ekanligini tekshirish
+        if not self.sotuv_qaytarish.pk:
             raise ValidationError("SotuvQaytarish avval saqlanishi kerak!")
 
         if not self.sotuv_qaytarish.ombor:
@@ -437,26 +436,28 @@ class SotuvQaytarishItem(models.Model):
         if not qaytaruvchi_ombor:
             raise ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
-        ombor_mahsulot = OmborMahsulot.objects.filter(
-            ombor=qaytaruvchi_ombor,
-            mahsulot=self.mahsulot
-        ).first()
-        if not ombor_mahsulot or ombor_mahsulot.soni < self.soni:
-            raise ValidationError(
-                f"{self.mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni if ombor_mahsulot else 0}"
-            )
-        ombor_mahsulot.soni -= self.soni
-        ombor_mahsulot.save()
+        with transaction.atomic():
+            if is_new:  # Faqat yangi obyekt uchun mahsulotni ayirish
+                ombor_mahsulot = OmborMahsulot.objects.filter(
+                    ombor=qaytaruvchi_ombor,
+                    mahsulot=self.mahsulot
+                ).first()
+                if not ombor_mahsulot or ombor_mahsulot.soni < self.soni:
+                    raise ValidationError(
+                        f"{self.mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni if ombor_mahsulot else 0}"
+                    )
+                ombor_mahsulot.soni -= self.soni
+                ombor_mahsulot.save()
 
-        qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-            ombor=self.sotuv_qaytarish.ombor,
-            mahsulot=self.mahsulot,
-            defaults={'soni': 0}
-        )
-        qaytarish_ombor_mahsulot.soni += self.soni
-        qaytarish_ombor_mahsulot.save()
+                qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                    ombor=self.sotuv_qaytarish.ombor,
+                    mahsulot=self.mahsulot,
+                    defaults={'soni': 0}
+                )
+                qaytarish_ombor_mahsulot.soni += self.soni
+                qaytarish_ombor_mahsulot.save()
 
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.sotuv_qaytarish.qaytaruvchi).first()

@@ -110,9 +110,9 @@ class SotuvQaytarishAdmin(admin.ModelAdmin):
     def save_formset(self, request, form, formset, change):
         with transaction.atomic():
             instances = formset.save(commit=False)
-            for obj in formset.deleted_objects:
-                obj.delete()
+            form.instance.save()  # Avval asosiy obyektni saqlash
             for instance in instances:
                 if not instance.pk:  # Yangi obyekt bo‘lsa
                     instance.save()
-            form.instance.save()
+            for obj in formset.deleted_objects:
+                obj.delete()
