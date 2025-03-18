@@ -95,112 +95,25 @@ class PaymentAdmin(admin.ModelAdmin):
 
 
 # Mavjud kodlar
+from django.db import transaction
 
 class SotuvQaytarishItemInline(admin.TabularInline):
     model = SotuvQaytarishItem
-    extra = 1
-    fields = ('mahsulot', 'soni', 'narx')
-    readonly_fields = ()
+    extra = 1  # Qo‘shimcha qatorlar soni
 
 @admin.register(SotuvQaytarish)
 class SotuvQaytarishAdmin(admin.ModelAdmin):
-    list_display = ('sana', 'qaytaruvchi', 'total_sum', 'ombor')
     inlines = [SotuvQaytarishItemInline]
-    fields = ('qaytaruvchi', 'ombor')
-    readonly_fields = ('total_sum', 'sana')
+    list_display = ('id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor')
+    search_fields = ('qaytaruvchi__username', 'sana')
 
     def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            # Total_sum ni hisoblash va yangilash
+            obj.total_sum = obj.calculate_total_sum()
+            obj.save(update_fields=['total_sum'])
 
-    def save_formset(self, request, form, formset, change):
-        qaytaruvchi = form.instance.qaytaruvchi
-        qaytarish_ombor = form.instance.ombor
-
-        # Qaytaruvchiga bog‘langan omborni topish
-        try:
-            qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
-        except Ombor.DoesNotExist:
-            self.message_user(request, "Qaytaruvchiga bog‘langan ombor topilmadi.", level='error')
-            return
-
-        # Omborda yetarli mahsulot borligini tekshirish
-        instances = formset.save(commit=False)
-        for instance in instances:
-            try:
-                ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=instance.mahsulot)
-                if ombor_mahsulot.soni < instance.soni:
-                    self.message_user(request, f"{instance.mahsulot.name} uchun omborda yetarli mahsulot yo‘q.", level='error')
-                    return
-            except OmborMahsulot.DoesNotExist:
-                self.message_user(request, f"{instance.mahsulot.name} mahsuloti qaytaruvchi omborda mavjud emas.", level='error')
-                return
-
-        # Ombordan mahsulotlarni ayirish
-        total_sum = 0
-        for instance in instances:
-            ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=instance.mahsulot)
-            ombor_mahsulot.soni -= instance.soni
-            ombor_mahsulot.save()
-
-            instance.sotuv_qaytarish = form.instance
-            instance.save()
-            total_sum += instance.soni * instance.narx
-
-            # Qaytarish omboriga mahsulotni qo‘shish
-            ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-                ombor=qaytarish_ombor,
-                mahsulot=instance.mahsulot,
-                defaults={'soni': 0}
-            )
-            ombor_mahsulot.soni += instance.soni
-            ombor_mahsulot.save()
-
-        formset.save_m2m()
-        form.instance.total_sum = total_sum
-        form.instance.save()
-
-        # Qaytaruvchining balansini yangilash
-        qaytaruvchi.balance = float(qaytaruvchi.balance) + float(total_sum)
-        qaytaruvchi.save()
-
-    def delete_model(self, request, obj):
-        qaytaruvchi = obj.qaytaruvchi
-        qaytarish_ombor = obj.ombor
-
-        try:
-            qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
-        except Ombor.DoesNotExist:
-            self.message_user(request, "Qaytaruvchiga bog‘langan ombor topilmadi.", level='error')
-            return
-
-        # Omborga qayta tiklash
-        for item in obj.items.all():
-            # Qaytaruvchi omboriga mahsulotlarni qaytarish
-            ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-                ombor=qaytaruvchi_ombor,
-                mahsulot=item.mahsulot,
-                defaults={'soni': 0}
-            )
-            ombor_mahsulot.soni += item.soni
-            ombor_mahsulot.save()
-
-            # Qaytarish omboridan mahsulotlarni ayirish
-            try:
-                qaytarish_ombor_mahsulot = OmborMahsulot.objects.get(
-                    ombor=qaytarish_ombor,
-                    mahsulot=item.mahsulot
-                )
-                qaytarish_ombor_mahsulot.soni -= item.soni
-                if qaytarish_ombor_mahsulot.soni < 0:
-                    self.message_user(request, f"{item.mahsulot.name} uchun qaytarish omborda yetarli mahsulot yo‘q.", level='error')
-                    return
-                qaytarish_ombor_mahsulot.save()
-            except OmborMahsulot.DoesNotExist:
-                self.message_user(request, f"{item.mahsulot.name} qaytarish omborda topilmadi.", level='error')
-                return
-
-        # Balansni qayta tiklash
-        qaytaruvchi.balance = float(qaytaruvchi.balance) - float(obj.total_sum)
-        qaytaruvchi.save()
-
-        super().delete_model(request, obj)
+            if obj.total_sum > 0 and obj.qaytaruvchi:
+                obj.qaytaruvchi.balance += obj.total_sum
+                obj.qaytaruvchi.save()

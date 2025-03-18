@@ -355,7 +355,7 @@ class Payment(models.Model):
 
 
 class SotuvQaytarish(models.Model):
-    id = models.BigAutoField(primary_key=True, editable=False)  # Sotuvga o‘xshatildi
+    id = models.BigAutoField(primary_key=True, editable=False)
     sana = models.DateTimeField(auto_now_add=True)
     qaytaruvchi = models.ForeignKey('all.User', on_delete=models.CASCADE, related_name='qaytarishlar')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -369,20 +369,20 @@ class SotuvQaytarish(models.Model):
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
+            super().save(*args, **kwargs)  # Avval obyektni saqlash
             total_sum = self.calculate_total_sum()
             self.total_sum = total_sum
             if self.total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance += self.total_sum  # Qaytarishda balansga qo‘shiladi
+                self.qaytaruvchi.balance += self.total_sum
                 self.qaytaruvchi.save()
-            super().save(*args, **kwargs)
+            super().save(update_fields=['total_sum'])  # Faqat total_sum ni yangilash
 
     def delete(self, *args, **kwargs):
         with transaction.atomic():
             if self.total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance -= self.total_sum  # O‘chirilganda balansdan ayirish
+                self.qaytaruvchi.balance -= self.total_sum
                 self.qaytaruvchi.save()
 
-            # Qaytarish omboridan mahsulotlarni o‘chirish
             for item in self.items.all():
                 ombor_mahsulot = OmborMahsulot.objects.filter(
                     ombor=self.ombor,
@@ -394,7 +394,6 @@ class SotuvQaytarish(models.Model):
                         raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
                     ombor_mahsulot.save()
 
-            # Qaytaruvchi omboriga mahsulotlarni qaytarish
             qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
             if qaytaruvchi_ombor:
                 for item in self.items.all():
