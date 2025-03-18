@@ -99,7 +99,7 @@ from django.db import transaction
 
 class SotuvQaytarishItemInline(admin.TabularInline):
     model = SotuvQaytarishItem
-    extra = 1  # Qo‘shimcha qatorlar soni
+    extra = 1
 
 @admin.register(SotuvQaytarish)
 class SotuvQaytarishAdmin(admin.ModelAdmin):
@@ -107,13 +107,12 @@ class SotuvQaytarishAdmin(admin.ModelAdmin):
     list_display = ('id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor')
     search_fields = ('qaytaruvchi__username', 'sana')
 
-    def save_model(self, request, obj, form, change):
+    def save_formset(self, request, form, formset, change):
         with transaction.atomic():
-            super().save_model(request, obj, form, change)
-            # Total_sum ni hisoblash va yangilash
-            obj.total_sum = obj.calculate_total_sum()
-            obj.save(update_fields=['total_sum'])
-
-            if obj.total_sum > 0 and obj.qaytaruvchi:
-                obj.qaytaruvchi.balance += obj.total_sum
-                obj.qaytaruvchi.save()
+            instances = formset.save(commit=False)
+            for obj in formset.deleted_objects:
+                obj.delete()
+            for instance in instances:
+                if not instance.pk:  # Yangi obyekt bo‘lsa
+                    instance.save()
+            form.instance.save()

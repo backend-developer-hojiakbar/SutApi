@@ -354,6 +354,11 @@ class Payment(models.Model):
         self.user.save()
 
 
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import transaction
+
+
 class SotuvQaytarish(models.Model):
     id = models.BigAutoField(primary_key=True, editable=False)
     sana = models.DateTimeField(auto_now_add=True)
@@ -368,21 +373,24 @@ class SotuvQaytarish(models.Model):
         return sum(item.soni * item.narx for item in self.items.all())
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None  # Yangi obyekt ekanligini tekshirish
         with transaction.atomic():
             super().save(*args, **kwargs)  # Avval obyektni saqlash
             total_sum = self.calculate_total_sum()
             self.total_sum = total_sum
-            if self.total_sum > 0 and self.qaytaruvchi:
+            if is_new and self.total_sum > 0 and self.qaytaruvchi:  # Faqat yangi obyekt uchun balansni qo‘shish
                 self.qaytaruvchi.balance += self.total_sum
                 self.qaytaruvchi.save()
             super().save(update_fields=['total_sum'])  # Faqat total_sum ni yangilash
 
     def delete(self, *args, **kwargs):
         with transaction.atomic():
-            if self.total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance -= self.total_sum
+            total_sum = self.total_sum
+            if total_sum > 0 and self.qaytaruvchi:
+                self.qaytaruvchi.balance -= total_sum  # Faqat bir marta ayirish
                 self.qaytaruvchi.save()
 
+            # Qaytarish omboridan mahsulotlarni o‘chirish
             for item in self.items.all():
                 ombor_mahsulot = OmborMahsulot.objects.filter(
                     ombor=self.ombor,
@@ -394,6 +402,7 @@ class SotuvQaytarish(models.Model):
                         raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
                     ombor_mahsulot.save()
 
+            # Qaytaruvchi omboriga mahsulotlarni qaytarish
             qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
             if qaytaruvchi_ombor:
                 for item in self.items.all():
@@ -418,6 +427,9 @@ class SotuvQaytarishItem(models.Model):
         return f"{self.mahsulot.name} - {self.soni} dona"
 
     def save(self, *args, **kwargs):
+        if not self.sotuv_qaytarish.pk:  # Agar asosiy obyekt hali saqlanmagan bo‘lsa, xatolik chiqarish
+            raise ValidationError("SotuvQaytarish avval saqlanishi kerak!")
+
         if not self.sotuv_qaytarish.ombor:
             raise ValidationError("Qaytarish uchun ombor belgilanmagan!")
 
