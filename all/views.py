@@ -258,6 +258,9 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+from datetime import date, timedelta  # To'g'ri import
+
+
 class SotuvViewSet(viewsets.ModelViewSet):
     queryset = Sotuv.objects.all().order_by('id')
     serializer_class = SotuvSerializer
@@ -267,7 +270,7 @@ class SotuvViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        today = datetime.date.today()
+        today = date.today()  # To'g'ri ishlatilgan
 
         # Filtrlarni qo‘shimcha qo‘shish
         date_filter = self.request.query_params.get('date_filter', None)
@@ -275,10 +278,10 @@ class SotuvViewSet(viewsets.ModelViewSet):
             if date_filter == 'today':
                 queryset = queryset.filter(sana__date=today)
             elif date_filter == 'yesterday':
-                yesterday = today - datetime.timedelta(days=1)
+                yesterday = today - timedelta(days=1)
                 queryset = queryset.filter(sana__date=yesterday)
             elif date_filter == 'last_7_days':
-                last_7_days = today - datetime.timedelta(days=6)
+                last_7_days = today - timedelta(days=6)
                 queryset = queryset.filter(sana__date__range=[last_7_days, today])
             elif date_filter == 'this_month':
                 first_day_of_month = today.replace(day=1)
@@ -363,6 +366,8 @@ class TokenAPIView(views.APIView):
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+from datetime import date, timedelta  # To'g'ri import
+
 
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     queryset = SotuvQaytarish.objects.all().order_by('id')
@@ -373,7 +378,7 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        today = datetime.date.today()
+        today = date.today()  # To'g'ri ishlatilgan
 
         # Filtrlarni qo‘shimcha qo‘shish
         date_filter = self.request.query_params.get('date_filter', None)
@@ -381,10 +386,10 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
             if date_filter == 'today':
                 queryset = queryset.filter(sana__date=today)
             elif date_filter == 'yesterday':
-                yesterday = today - datetime.timedelta(days=1)
+                yesterday = today - timedelta(days=1)
                 queryset = queryset.filter(sana__date=yesterday)
             elif date_filter == 'last_7_days':
-                last_7_days = today - datetime.timedelta(days=6)
+                last_7_days = today - timedelta(days=6)
                 queryset = queryset.filter(sana__date__range=[last_7_days, today])
             elif date_filter == 'this_month':
                 first_day_of_month = today.replace(day=1)
