@@ -350,7 +350,6 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def reverse_warehouse_stock(self, sotuv_qaytarish):
-        """Qaytarish o‘chirilganda ombor zaxirasini qayta tiklash"""
         qaytaruvchi = sotuv_qaytarish.qaytaruvchi
         qaytarish_ombor = sotuv_qaytarish.ombor
 
@@ -361,30 +360,27 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for item in sotuv_qaytarish.items.all():
-                # Qaytaruvchi omboriga mahsulotlarni qaytarish
-                ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                ombor_mahsulot_qaytaruvchi, created = OmborMahsulot.objects.get_or_create(
                     ombor=qaytaruvchi_ombor,
                     mahsulot=item.mahsulot,
                     defaults={'soni': 0}
                 )
-                ombor_mahsulot.soni += item.soni
-                ombor_mahsulot.save()
+                ombor_mahsulot_qaytaruvchi.soni += item.soni
+                ombor_mahsulot_qaytaruvchi.save()
 
-                # Qaytarish omboridan mahsulotlarni ayirish
                 try:
-                    qaytarish_ombor_mahsulot = OmborMahsulot.objects.get(
+                    ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
                         ombor=qaytarish_ombor,
                         mahsulot=item.mahsulot
                     )
-                    qaytarish_ombor_mahsulot.soni -= item.soni
-                    if qaytarish_ombor_mahsulot.soni < 0:
+                    ombor_mahsulot_qaytarish.soni -= item.soni
+                    if ombor_mahsulot_qaytarish.soni < 0:
                         raise ValueError(f"{item.mahsulot.name} uchun qaytarish omborda yetarli mahsulot yo‘q")
-                    qaytarish_ombor_mahsulot.save()
+                    ombor_mahsulot_qaytarish.save()
                 except OmborMahsulot.DoesNotExist:
                     raise ValueError(f"{item.mahsulot.name} qaytarish omborda topilmadi")
 
-            # Balansni qayta tiklash
-            qaytaruvchi.balance = float(qaytaruvchi.balance) - float(sotuv_qaytarish.total_sum)
+            qaytaruvchi.balance -= sotuv_qaytarish.total_sum
             qaytaruvchi.save()
 
     def destroy(self, request, *args, **kwargs):

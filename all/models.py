@@ -355,20 +355,115 @@ class Payment(models.Model):
 
 
 class SotuvQaytarish(models.Model):
+    id = models.BigAutoField(primary_key=True, editable=False)  # Sotuvga o‘xshatildi
     sana = models.DateTimeField(auto_now_add=True)
-    qaytaruvchi = models.ForeignKey(User, on_delete=models.CASCADE, related_name='qaytarishlar')
+    qaytaruvchi = models.ForeignKey('all.User', on_delete=models.CASCADE, related_name='qaytarishlar')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    ombor = models.ForeignKey(Ombor, on_delete=models.CASCADE)
+    ombor = models.ForeignKey('Ombor', on_delete=models.CASCADE)
 
     def __str__(self):
         return f"{self.qaytaruvchi.username} - {self.sana}"
 
+    def calculate_total_sum(self):
+        return sum(item.soni * item.narx for item in self.items.all())
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            total_sum = self.calculate_total_sum()
+            self.total_sum = total_sum
+            if self.total_sum > 0 and self.qaytaruvchi:
+                self.qaytaruvchi.balance += self.total_sum  # Qaytarishda balansga qo‘shiladi
+                self.qaytaruvchi.save()
+            super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            if self.total_sum > 0 and self.qaytaruvchi:
+                self.qaytaruvchi.balance -= self.total_sum  # O‘chirilganda balansdan ayirish
+                self.qaytaruvchi.save()
+
+            # Qaytarish omboridan mahsulotlarni o‘chirish
+            for item in self.items.all():
+                ombor_mahsulot = OmborMahsulot.objects.filter(
+                    ombor=self.ombor,
+                    mahsulot=item.mahsulot
+                ).first()
+                if ombor_mahsulot:
+                    ombor_mahsulot.soni -= item.soni
+                    if ombor_mahsulot.soni < 0:
+                        raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
+                    ombor_mahsulot.save()
+
+            # Qaytaruvchi omboriga mahsulotlarni qaytarish
+            qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
+            if qaytaruvchi_ombor:
+                for item in self.items.all():
+                    ombor_mahsulot_qaytaruvchi, created = OmborMahsulot.objects.get_or_create(
+                        ombor=qaytaruvchi_ombor,
+                        mahsulot=item.mahsulot,
+                        defaults={'soni': 0}
+                    )
+                    ombor_mahsulot_qaytaruvchi.soni += item.soni
+                    ombor_mahsulot_qaytaruvchi.save()
+
+            super().delete(*args, **kwargs)
+
 
 class SotuvQaytarishItem(models.Model):
     sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE, related_name='items')
-    mahsulot = models.ForeignKey(Mahsulot, on_delete=models.CASCADE)
+    mahsulot = models.ForeignKey('Mahsulot', on_delete=models.CASCADE)
     soni = models.PositiveIntegerField()
     narx = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self):
         return f"{self.mahsulot.name} - {self.soni} dona"
+
+    def save(self, *args, **kwargs):
+        if not self.sotuv_qaytarish.ombor:
+            raise ValidationError("Qaytarish uchun ombor belgilanmagan!")
+
+        qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.sotuv_qaytarish.qaytaruvchi).first()
+        if not qaytaruvchi_ombor:
+            raise ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
+
+        ombor_mahsulot = OmborMahsulot.objects.filter(
+            ombor=qaytaruvchi_ombor,
+            mahsulot=self.mahsulot
+        ).first()
+        if not ombor_mahsulot or ombor_mahsulot.soni < self.soni:
+            raise ValidationError(
+                f"{self.mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni if ombor_mahsulot else 0}"
+            )
+        ombor_mahsulot.soni -= self.soni
+        ombor_mahsulot.save()
+
+        qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+            ombor=self.sotuv_qaytarish.ombor,
+            mahsulot=self.mahsulot,
+            defaults={'soni': 0}
+        )
+        qaytarish_ombor_mahsulot.soni += self.soni
+        qaytarish_ombor_mahsulot.save()
+
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.sotuv_qaytarish.qaytaruvchi).first()
+        if qaytaruvchi_ombor:
+            ombor_mahsulot = OmborMahsulot.objects.filter(
+                ombor=qaytaruvchi_ombor,
+                mahsulot=self.mahsulot
+            ).first()
+            if ombor_mahsulot:
+                ombor_mahsulot.soni += self.soni
+                ombor_mahsulot.save()
+
+        qaytarish_ombor_mahsulot = OmborMahsulot.objects.filter(
+            ombor=self.sotuv_qaytarish.ombor,
+            mahsulot=self.mahsulot
+        ).first()
+        if qaytarish_ombor_mahsulot:
+            qaytarish_ombor_mahsulot.soni -= self.soni
+            qaytarish_ombor_mahsulot.save()
+
+        super().delete(*args, **kwargs)

@@ -202,10 +202,12 @@ class TokenSerializer(TokenObtainPairSerializer):
         token['username'] = user.username
         return token
 
+
 class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvQaytarishItem
         fields = ['mahsulot', 'soni', 'narx']
+
 
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
     items = SotuvQaytarishItemSerializer(many=True)
@@ -213,76 +215,85 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvQaytarish
         fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'items']
-        extra_kwargs = {'id': {'read_only': True}, 'sana': {'read_only': True}, 'total_sum': {'read_only': True}}
+        extra_kwargs = {
+            'id': {'read_only': True},  # Sotuvga o‘xshatib faqat o‘qish uchun
+            'sana': {'read_only': True},
+            'total_sum': {'read_only': True}
+        }
 
     def validate(self, data):
         qaytaruvchi = data.get('qaytaruvchi')
         items = data.get('items', [])
+        ombor = data.get('ombor')
 
-        # Qaytaruvchiga bog‘langan omborni topish
+        if not items:
+            raise serializers.ValidationError("Kamida bitta mahsulot qaytarilishi kerak.")
+
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
         except Ombor.DoesNotExist:
             raise serializers.ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
-        # Omborda yetarli mahsulot borligini tekshirish
         for item in items:
             mahsulot = item['mahsulot']
             soni = item['soni']
             try:
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
                 if ombor_mahsulot.soni < soni:
-                    raise serializers.ValidationError(f"{mahsulot.name} uchun omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni}, talab qilingan: {soni}")
+                    raise serializers.ValidationError(
+                        f"{mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni}, talab qilingan: {soni}"
+                    )
             except OmborMahsulot.DoesNotExist:
                 raise serializers.ValidationError(f"{mahsulot.name} mahsuloti qaytaruvchi omborda mavjud emas.")
 
         return data
 
     def create(self, validated_data):
+        from django.db import transaction
         items_data = validated_data.pop('items')
         qaytaruvchi = validated_data['qaytaruvchi']
-        qaytarish_ombor = validated_data['ombor']
+        ombor = validated_data['ombor']
 
-        # Qaytaruvchiga bog‘langan omborni topish
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
         except Ombor.DoesNotExist:
             raise serializers.ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
-        # Ombordan mahsulotlarni ayirish
         with transaction.atomic():
+            sotuv_qaytarish = SotuvQaytarish.objects.create(**validated_data)
+            total_sum = 0
+
             for item_data in items_data:
                 mahsulot = item_data['mahsulot']
                 soni = item_data['soni']
+                narx = item_data['narx']
+
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
-                ombor_mahsulot.soni -= soni
-                if ombor_mahsulot.soni < 0:
+                if ombor_mahsulot.soni < soni:
                     raise serializers.ValidationError(f"{mahsulot.name} uchun omborda yetarli mahsulot yo‘q.")
+                ombor_mahsulot.soni -= soni
                 ombor_mahsulot.save()
 
-            # SotuvQaytarish obyektini yaratish
-            sotuv_qaytarish = SotuvQaytarish.objects.create(**validated_data)
-
-            # Mahsulotlarni qaytarish omboriga qo‘shish
-            total_sum = 0
-            for item_data in items_data:
-                sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(sotuv_qaytarish=sotuv_qaytarish, **item_data)
-                total_sum += sotuv_qaytarish_item.soni * sotuv_qaytarish_item.narx
-
-                # Qaytarish omborida mahsulotni yangilash
-                ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-                    ombor=qaytarish_ombor,
-                    mahsulot=sotuv_qaytarish_item.mahsulot,
+                qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                    ombor=ombor,
+                    mahsulot=mahsulot,
                     defaults={'soni': 0}
                 )
-                ombor_mahsulot.soni += sotuv_qaytarish_item.soni
-                ombor_mahsulot.save()
+                qaytarish_ombor_mahsulot.soni += soni
+                qaytarish_ombor_mahsulot.save()
+
+                sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(
+                    sotuv_qaytarish=sotuv_qaytarish,
+                    mahsulot=mahsulot,
+                    soni=soni,
+                    narx=narx
+                )
+                total_sum += soni * narx
 
             sotuv_qaytarish.total_sum = total_sum
             sotuv_qaytarish.save()
 
-            # Balansni yangilash
-            qaytaruvchi.balance = float(qaytaruvchi.balance) + float(total_sum)
+            qaytaruvchi.balance += total_sum
             qaytaruvchi.save()
 
         return sotuv_qaytarish
