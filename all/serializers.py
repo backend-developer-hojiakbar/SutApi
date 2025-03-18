@@ -208,7 +208,6 @@ class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
         model = SotuvQaytarishItem
         fields = ['mahsulot', 'soni', 'narx']
 
-
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
     items = SotuvQaytarishItemSerializer(many=True)
 
@@ -216,7 +215,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         model = SotuvQaytarish
         fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'items']
         extra_kwargs = {
-            'id': {'read_only': True},  # Sotuvga o‘xshatib faqat o‘qish uchun
+            'id': {'read_only': True},
             'sana': {'read_only': True},
             'total_sum': {'read_only': True}
         }
@@ -268,12 +267,16 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                 soni = item_data['soni']
                 narx = item_data['narx']
 
+                # Validatsiya
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
                 if ombor_mahsulot.soni < soni:
                     raise serializers.ValidationError(f"{mahsulot.name} uchun omborda yetarli mahsulot yo‘q.")
+
+                # Mahsulotni faqat bir marta ayirish
                 ombor_mahsulot.soni -= soni
                 ombor_mahsulot.save()
 
+                # Qaytarish omboriga qo‘shish
                 qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
                     ombor=ombor,
                     mahsulot=mahsulot,
@@ -282,6 +285,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                 qaytarish_ombor_mahsulot.soni += soni
                 qaytarish_ombor_mahsulot.save()
 
+                # Itemni yaratish
                 sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(
                     sotuv_qaytarish=sotuv_qaytarish,
                     mahsulot=mahsulot,
