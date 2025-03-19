@@ -278,7 +278,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                     mahsulot=mahsulot,
                     defaults={'soni': 0}
                 )
-                qaytarish_ombor_mahsulot.soni += soni
+                # qaytarish_ombor_mahsulot.soni += soni
                 qaytarish_ombor_mahsulot.save()
 
                 sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(

@@ -426,7 +426,7 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
                     mahsulot=item.mahsulot,
                     defaults={'soni': 0}
                 )
-                ombor_mahsulot_qaytaruvchi.soni += item.soni
+                # ombor_mahsulot_qaytaruvchi.soni += item.soni
                 ombor_mahsulot_qaytaruvchi.save()
 
                 try:
