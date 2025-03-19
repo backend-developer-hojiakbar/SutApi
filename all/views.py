@@ -389,25 +389,35 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        today = date.today()  # To'g'ri ishlatilgan
+        today = timezone.now().date()  # To'g'ri vaqtdan faqat sana olish
 
         # Filtrlarni qo‘shimcha qo‘shish
         date_filter = self.request.query_params.get('date_filter', None)
         if date_filter:
             if date_filter == 'today':
-                queryset = queryset.filter(sana__date=today)
+                start_of_day = datetime.combine(today, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
             elif date_filter == 'yesterday':
                 yesterday = today - timedelta(days=1)
-                queryset = queryset.filter(sana__date=yesterday)
+                start_of_day = datetime.combine(yesterday, time.min)
+                end_of_day = datetime.combine(yesterday, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
             elif date_filter == 'last_7_days':
                 last_7_days = today - timedelta(days=6)
-                queryset = queryset.filter(sana__date__range=[last_7_days, today])
+                start_of_day = datetime.combine(last_7_days, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
             elif date_filter == 'this_month':
                 first_day_of_month = today.replace(day=1)
-                queryset = queryset.filter(sana__date__range=[first_day_of_month, today])
+                start_of_day = datetime.combine(first_day_of_month, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
             elif date_filter == 'this_year':
                 first_day_of_year = today.replace(month=1, day=1)
-                queryset = queryset.filter(sana__date__range=[first_day_of_year, today])
+                start_of_day = datetime.combine(first_day_of_year, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
 
         return queryset
 
