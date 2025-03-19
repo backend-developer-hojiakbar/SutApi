@@ -64,6 +64,7 @@ User = get_user_model()
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('id')
     serializer_class = UserSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated, CanCreateShopPermission]  # Yangi ruxsat sinfi qo‘shildi
 
     def get_queryset(self):
@@ -132,6 +133,7 @@ class UserViewSet(viewsets.ModelViewSet):
 class OmborViewSet(viewsets.ModelViewSet):
     queryset = Ombor.objects.all().order_by('id')
     serializer_class = OmborSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
@@ -161,16 +163,19 @@ class OmborViewSet(viewsets.ModelViewSet):
 class OmborMahsulotViewSet(viewsets.ModelViewSet):
     queryset = OmborMahsulot.objects.all().order_by('id')
     serializer_class = OmborMahsulotSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
 class KategoriyaViewSet(viewsets.ModelViewSet):
     queryset = Kategoriya.objects.all().order_by('id')
     serializer_class = KategoriyaSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
 class BirlikViewSet(viewsets.ModelViewSet):
     queryset = Birlik.objects.all().order_by('id')
     serializer_class = BirlikSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
 class MahsulotViewSet(viewsets.ModelViewSet):
@@ -197,6 +202,7 @@ class MahsulotViewSet(viewsets.ModelViewSet):
 class PurchaseViewSet(viewsets.ModelViewSet):
     queryset = Purchase.objects.all()
     serializer_class = PurchaseSerializer
+    pagination_class = CustomPagination
 
     def reverse_warehouse_stock(self, purchase):
         """Purchase o‘chirilganda yoki tahrirlanganda eski zaxirani qaytarish"""
@@ -263,11 +269,12 @@ from datetime import datetime, time, timedelta
 
 
 class SotuvViewSet(viewsets.ModelViewSet):
-    queryset = Sotuv.objects.all().order_by('id')
+    queryset = Sotuv.objects.all().order_by('-id')
     serializer_class = SotuvSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+    pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -321,6 +328,7 @@ class SotuvViewSet(viewsets.ModelViewSet):
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
+    pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
@@ -381,11 +389,12 @@ from datetime import date, timedelta  # To'g'ri import
 
 
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
-    queryset = SotuvQaytarish.objects.all().order_by('id')
+    queryset = SotuvQaytarish.objects.all().order_by('-id')
     serializer_class = SotuvQaytarishSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+    pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
