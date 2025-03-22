@@ -32,12 +32,11 @@ router.register(r'kategoriyalar', KategoriyaViewSet)
 router.register(r'birliklar', BirlikViewSet)
 router.register(r'mahsulotlar', MahsulotViewSet)
 router.register(r'purchases', PurchaseViewSet)
-# router.register(r'purchaseitems', PurchaseItemViewSet)
 router.register(r'sotuvlar', SotuvViewSet)
-# router.register(r'sotuvitems', SotuvItemViewSet)
 router.register(r'payments', PaymentViewSet)
 router.register(r'ombor_mahsulot', OmborMahsulotViewSet)
 router.register(r'sotuv_qaytarish', SotuvQaytarishViewSet)
+router.register(r'activities', ActivityLogViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -52,6 +51,7 @@ urlpatterns = [
     path('login/', LoginAPIView.as_view(), name='login'),
     path('logout/', LogoutAPIView.as_view(), name='logout'),
     path('token/', TokenAPIView.as_view(), name='token_obtain_pair'),
+    path('dealer-shops-report/<int:dealer_id>/', DealerShopsReportView.as_view(), name='dealer_shops_report'),
 ]
 
 app_name = 'all'

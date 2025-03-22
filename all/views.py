@@ -1,6 +1,10 @@
 from rest_framework import viewsets, permissions, filters, status, views, response
-from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, OmborMahsulot, SotuvQaytarishItem, SotuvQaytarish
-from .serializers import UserSerializer, OmborSerializer, KategoriyaSerializer, BirlikSerializer, MahsulotSerializer, PurchaseSerializer, PurchaseItemSerializer, SotuvSerializer, SotuvItemSerializer, PaymentSerializer, LoginSerializer, OmborMahsulotSerializer, TokenSerializer, LogoutSerializer, SotuvQaytarishSerializer, SotuvQaytarishItemSerializer
+from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, \
+    OmborMahsulot, SotuvQaytarishItem, SotuvQaytarish, ActivityLog
+from .serializers import UserSerializer, OmborSerializer, KategoriyaSerializer, BirlikSerializer, MahsulotSerializer, \
+    PurchaseSerializer, PurchaseItemSerializer, SotuvSerializer, SotuvItemSerializer, PaymentSerializer, \
+    LoginSerializer, OmborMahsulotSerializer, TokenSerializer, LogoutSerializer, SotuvQaytarishSerializer, \
+    SotuvQaytarishItemSerializer, ActivityLogSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -9,25 +13,24 @@ from django.db.models import Sum
 from django.db.models.functions import TruncMonth
 from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import datetime
-from .permissions import CanCreateShopPermission  # Yangi ruxsat sinfi import qilinadi
+from .permissions import CanCreateShopPermission
 from rest_framework.pagination import PageNumberPagination
 from django.conf import settings
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
+from django.utils import timezone
+from datetime import datetime, time, timedelta
 
 
 class CustomPagination(PageNumberPagination):
     def get_paginated_response(self, data):
-        base_url = settings.BASE_URL  # 'https://lemoonapi.cdpos.uz:444'
+        base_url = settings.BASE_URL
         next_link = self.get_next_link()
         previous_link = self.get_previous_link()
-
-        # Noto‘g‘ri domenni to‘g‘rilash
         if next_link:
             next_link = next_link.replace('http://127.0.0.1:1111', base_url)
         if previous_link:
             previous_link = previous_link.replace('http://127.0.0.1:1111', base_url)
-
         return Response({
             'count': self.page.paginator.count,
             'next': next_link,
@@ -35,44 +38,76 @@ class CustomPagination(PageNumberPagination):
             'results': data
         })
 
+
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def sotuv_hisoboti(request):
-    """Sotuvlar bo'yicha hisobot"""
-    sotuvlar = Sotuv.objects.annotate(month=TruncMonth('sana')).values('month').annotate(total_sum=Sum('total_sum')).order_by('month')
-    data = [{'id': idx + 1, 'month': item['month'].strftime('%Y-%m'), 'total_sum': float(item['total_sum']), 'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in enumerate(sotuvlar)]
+    sotuvlar = Sotuv.objects.annotate(month=TruncMonth('sana')).values('month').annotate(
+        total_sum=Sum('total_sum')).order_by('month')
+    data = [{'id': idx + 1, 'month': item['month'].strftime('%Y-%m'), 'total_sum': float(item['total_sum']),
+             'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in
+            enumerate(sotuvlar)]
     return Response(data)
+
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def xarid_hisoboti(request):
-    """Xaridlar bo'yicha hisobot"""
-    xaridlar = Purchase.objects.annotate(month=TruncMonth('sana')).values('month').annotate(total_sum=Sum('total_sum')).order_by('month')
-    data = [{'id': idx + 1, 'month': item['month'].strftime('%Y-%m'), 'total_sum': float(item['total_sum']), 'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in enumerate(xaridlar)]
+    xaridlar = Purchase.objects.annotate(month=TruncMonth('sana')).values('month').annotate(
+        total_sum=Sum('total_sum')).order_by('month')
+    data = [{'id': idx + 1, 'month': item['month'].strftime('%Y-%m'), 'total_sum': float(item['total_sum']),
+             'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in
+            enumerate(xaridlar)]
     return Response(data)
+
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def ombor_hisoboti(request):
-    """Omborlar bo'yicha hisobot"""
     omborlar = OmborMahsulot.objects.values('ombor__name').annotate(total_mahsulot=Sum('soni'))
-    data = [{'id': idx + 1, 'ombor__name': item['ombor__name'], 'total_mahsulot': item['total_mahsulot'], 'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in enumerate(omborlar)]
+    data = [{'id': idx + 1, 'ombor__name': item['ombor__name'], 'total_mahsulot': item['total_mahsulot'],
+             'created_by': request.user.id, 'created_at': datetime.now().isoformat()} for idx, item in
+            enumerate(omborlar)]
     return Response(data)
 
+
+class DealerShopsReportView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, dealer_id):
+        if request.user.user_type not in ['admin', 'dealer']:
+            return Response({"detail": "Faqat admin yoki dealerlar bu hisobotni ko‘ra oladi."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        dealer = User.objects.filter(id=dealer_id, user_type='dealer').first()
+        if not dealer:
+            return Response({"detail": "Diler topilmadi."}, status=status.HTTP_404_NOT_FOUND)
+
+        shops = User.objects.filter(created_by=dealer, user_type='shop')
+        total_balance = shops.aggregate(total_balance=Sum('balance'))['total_balance'] or 0
+        serializer = UserSerializer(shops, many=True)
+
+        return Response({
+            'dealer': dealer.username,
+            'shops': serializer.data,
+            'total_balance': float(total_balance)
+        })
+
+
 User = get_user_model()
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('id')
     serializer_class = UserSerializer
     pagination_class = CustomPagination
-    permission_classes = [permissions.IsAuthenticated, CanCreateShopPermission]  # Yangi ruxsat sinfi qo‘shildi
+    permission_classes = [permissions.IsAuthenticated, CanCreateShopPermission]
 
     def get_queryset(self):
         user = self.request.user
         if user.user_type in ['admin', 'omborchi']:
             return User.objects.all().order_by('id')
         elif user.user_type == 'dealer':
-            # Dealer faqat o‘zi qo‘shgan shop’larni ko‘radi
             return User.objects.filter(created_by=user).order_by('id')
         return User.objects.filter(id=user.id).order_by('id')
 
@@ -80,14 +115,11 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user_type = serializer.validated_data.get('user_type')
-
-        # Dealer faqat shop qo‘shishi mumkin, bu permission sinfida tekshiriladi
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        # Agar dealer qo‘shayotgan bo‘lsa, created_by maydonini o‘rnatamiz
         if self.request.user.user_type == 'dealer':
             serializer.save(created_by=self.request.user)
         else:
@@ -100,16 +132,14 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             serializer.save()
             return Response(serializer.data)
-        else:
-            return Response({"detail": "Sizda userni o'zgartirish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": "Sizda userni o'zgartirish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
 
     def destroy(self, request, pk=None):
         user = self.get_object()
         if request.user.user_type in ['admin', 'omborchi']:
             user.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        else:
-            return Response({"detail": "Sizda userni o'chirish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": "Sizda userni o'chirish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
 
     @action(detail=False, methods=['get'])
     def current_user(self, request):
@@ -124,12 +154,10 @@ class UserViewSet(viewsets.ModelViewSet):
             if serializer.is_valid():
                 klient = serializer.save(user_type='klient')
                 return Response(UserSerializer(klient).data, status=status.HTTP_201_CREATED)
-            else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({"detail": "Sizda klient yaratish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Sizda klient yaratish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
 
-# Qolgan ViewSet’lar o‘zgarmaydi
+
 class OmborViewSet(viewsets.ModelViewSet):
     queryset = Ombor.objects.all().order_by('id')
     serializer_class = OmborSerializer
@@ -154,11 +182,11 @@ class OmborViewSet(viewsets.ModelViewSet):
             self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        else:
-            return Response({"detail": "Sizda ombor yaratish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": "Sizda ombor yaratish huquqi yo'q."}, status=status.HTTP_403_FORBIDDEN)
 
     def perform_create(self, serializer):
         serializer.save(responsible_person=self.request.user)
+
 
 class OmborMahsulotViewSet(viewsets.ModelViewSet):
     queryset = OmborMahsulot.objects.all().order_by('id')
@@ -166,11 +194,13 @@ class OmborMahsulotViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
+
 class KategoriyaViewSet(viewsets.ModelViewSet):
     queryset = Kategoriya.objects.all().order_by('id')
     serializer_class = KategoriyaSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
+
 
 class BirlikViewSet(viewsets.ModelViewSet):
     queryset = Birlik.objects.all().order_by('id')
@@ -178,13 +208,14 @@ class BirlikViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
 
+
 class MahsulotViewSet(viewsets.ModelViewSet):
     queryset = Mahsulot.objects.all().order_by('id')
     serializer_class = MahsulotSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'sku', 'kategoriya__name']
     permission_classes = [permissions.IsAuthenticated]
-    pagination_class = CustomPagination  # Custom pagination qo‘shildi
+    pagination_class = CustomPagination
 
     def get_serializer_context(self):
         return {'request': self.request}
@@ -199,13 +230,13 @@ class MahsulotViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 class PurchaseViewSet(viewsets.ModelViewSet):
     queryset = Purchase.objects.all()
     serializer_class = PurchaseSerializer
     pagination_class = CustomPagination
 
     def reverse_warehouse_stock(self, purchase):
-        """Purchase o‘chirilganda yoki tahrirlanganda eski zaxirani qaytarish"""
         with transaction.atomic():
             for item in purchase.items.all():
                 try:
@@ -218,10 +249,9 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         raise ValueError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
                     warehouse_product.save()
                 except OmborMahsulot.DoesNotExist:
-                    continue  # Agar mahsulot omborda bo‘lmasa, o‘tib ketamiz
+                    continue
 
     def update_warehouse_stock(self, purchase_data, ombor_id):
-        """Yangi zaxirani qo‘shish"""
         with transaction.atomic():
             for item in purchase_data['items']:
                 mahsulot_id = item['mahsulot']
@@ -237,11 +267,12 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
-            self.reverse_warehouse_stock(instance)  # Ombordan sonni ayirish
+            self.reverse_warehouse_stock(instance)
             instance.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except OmborMahsulot.DoesNotExist:
-            return Response({"detail": "Omborda mahsulot topilmadi, o‘chirish imkonsiz"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Omborda mahsulot topilmadi, o‘chirish imkonsiz"},
+                            status=status.HTTP_400_BAD_REQUEST)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -251,21 +282,12 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-
         with transaction.atomic():
-            # Eski zaxirani qaytarish (sonni ayirish)
             self.reverse_warehouse_stock(instance)
-            # Eski item'larni o‘chirish
             instance.items.all().delete()
-            # Yangi ma'lumotni saqlash va zaxirani yangilash (sonni qo‘shish)
             self.perform_update(serializer)
             self.update_warehouse_stock(serializer.validated_data, instance.ombor_id)
-
         return Response(serializer.data)
-
-
-from django.utils import timezone
-from datetime import datetime, time, timedelta
 
 
 class SotuvViewSet(viewsets.ModelViewSet):
@@ -273,14 +295,12 @@ class SotuvViewSet(viewsets.ModelViewSet):
     serializer_class = SotuvSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+    filterset_fields = ['sana']
     pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        today = timezone.now().date()  # To'g'ri vaqtdan faqat sana olish
-
-        # Filtrlarni qo‘shimcha qo‘shish
+        today = timezone.now().date()
         date_filter = self.request.query_params.get('date_filter', None)
         if date_filter:
             if date_filter == 'today':
@@ -307,7 +327,6 @@ class SotuvViewSet(viewsets.ModelViewSet):
                 start_of_day = datetime.combine(first_day_of_year, time.min)
                 end_of_day = datetime.combine(today, time.max)
                 queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
-
         return queryset
 
     def create(self, request, *args, **kwargs):
@@ -324,6 +343,7 @@ class SotuvViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
@@ -345,6 +365,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
 class LoginAPIView(views.APIView):
     serializer_class = LoginSerializer
     permission_classes = [permissions.AllowAny]
@@ -358,6 +379,7 @@ class LoginAPIView(views.APIView):
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         }, status=status.HTTP_200_OK)
+
 
 class LogoutAPIView(views.APIView):
     serializer_class = LogoutSerializer
@@ -374,6 +396,7 @@ class LogoutAPIView(views.APIView):
         except Exception as e:
             return response.Response({'error': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
 
+
 class TokenAPIView(views.APIView):
     serializer_class = TokenSerializer
 
@@ -381,11 +404,16 @@ class TokenAPIView(views.APIView):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid(raise_exception=True):
             return response.Response(serializer.validated_data, status=status.HTTP_200_OK)
-        else:
-            return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-from datetime import date, timedelta  # To'g'ri import
+class ActivityLogViewSet(viewsets.ModelViewSet):
+    queryset = ActivityLog.objects.all().order_by('-timestamp')
+    serializer_class = ActivityLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['user']
+    pagination_class = CustomPagination
 
 
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
@@ -393,14 +421,12 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     serializer_class = SotuvQaytarishSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['sana']  # Sana bo‘yicha umumiy filtrlash uchun
+    filterset_fields = ['sana']
     pagination_class = CustomPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        today = timezone.now().date()  # To'g'ri vaqtdan faqat sana olish
-
-        # Filtrlarni qo‘shimcha qo‘shish
+        today = timezone.now().date()
         date_filter = self.request.query_params.get('date_filter', None)
         if date_filter:
             if date_filter == 'today':
@@ -427,7 +453,6 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
                 start_of_day = datetime.combine(first_day_of_year, time.min)
                 end_of_day = datetime.combine(today, time.max)
                 queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
-
         return queryset
 
     def create(self, request, *args, **kwargs):
@@ -443,6 +468,7 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     def reverse_warehouse_stock(self, sotuv_qaytarish):
         qaytaruvchi = sotuv_qaytarish.qaytaruvchi
         qaytarish_ombor = sotuv_qaytarish.ombor
+        condition = sotuv_qaytarish.condition
 
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
@@ -456,7 +482,6 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
                     mahsulot=item.mahsulot,
                     defaults={'soni': 0}
                 )
-                # ombor_mahsulot_qaytaruvchi.soni += item.soni
                 ombor_mahsulot_qaytaruvchi.save()
 
                 try:
@@ -471,8 +496,16 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
                 except OmborMahsulot.DoesNotExist:
                     raise ValueError(f"{item.mahsulot.name} qaytarish omborda topilmadi")
 
-            qaytaruvchi.balance -= sotuv_qaytarish.total_sum
-            qaytaruvchi.save()
+            if condition == 'healthy':
+                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
+                if admin_ombor:
+                    for item in sotuv_qaytarish.items.all():
+                        ombor_mahsulot = OmborMahsulot.objects.get(
+                            ombor=admin_ombor,
+                            mahsulot=item.mahsulot
+                        )
+                        ombor_mahsulot.soni -= item.soni
+                        ombor_mahsulot.save()
 
     def destroy(self, request, *args, **kwargs):
         try:

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, \
-    OmborMahsulot, SotuvQaytarish, SotuvQaytarishItem
+    OmborMahsulot, SotuvQaytarish, SotuvQaytarishItem, ActivityLog
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
@@ -12,8 +12,9 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = get_user_model()
         fields = (
-        'id', 'username', 'password', 'email', 'user_type', 'address', 'phone_number', 'is_active', 'last_sotuv_vaqti',
-        'balance', 'created_by')
+            'id', 'username', 'password', 'email', 'user_type', 'address', 'phone_number', 'is_active',
+            'last_sotuv_vaqti', 'balance', 'created_by', 'image', 'location'
+        )
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -32,6 +33,12 @@ class UserSerializer(serializers.ModelSerializer):
         return value
 
 
+class ActivityLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActivityLog
+        fields = ['id', 'user', 'action', 'timestamp', 'details']
+
+
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
@@ -39,7 +46,6 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         username = data.get('username', None)
         password = data.get('password', None)
-
         if username and password:
             user = authenticate(username=username, password=password)
             if user:
@@ -90,7 +96,7 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     def get_rasm(self, obj):
         if obj.rasm:
-            base_url = 'https://lemoonapi.cdpos.uz:444'  # Statik domen
+            base_url = 'https://lemoonapi.cdpos.uz:444'
             return f"{base_url}{obj.rasm.url}"
         return None
 
@@ -105,7 +111,7 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     def validate_narx(self, value):
         if value <= 0:
-            raise serializers.ValidationError("Mahsulot narxi 0 dan katta bo'lishi keraklidir.")
+            raise serializers.ValidationError("Mahsulot narxi 0 dan katta bo'lishi kerak.")
         return value
 
 
@@ -114,48 +120,39 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
         model = PurchaseItem
         fields = ['mahsulot', 'soni', 'narx', 'yaroqlilik_muddati']
 
+
 class PurchaseSerializer(serializers.ModelSerializer):
     items = PurchaseItemSerializer(many=True)
     yetkazib_beruvchi = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
 
     class Meta:
         model = Purchase
-        fields = ['ombor', 'sana', 'yetkazib_beruvchi', 'items', 'total_sum'] # total_sum maydonini qo'shish
-        extra_kwargs = {'id': {'read_only': True}, 'total_sum': {'read_only': True}}  # total_sum ham faqat o‘qish uchun
+        fields = ['ombor', 'sana', 'yetkazib_beruvchi', 'items', 'total_sum']
+        extra_kwargs = {'id': {'read_only': True}, 'total_sum': {'read_only': True}}
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
         purchase = Purchase.objects.create(**validated_data)
-
         total_sum = 0
         for item_data in items_data:
             purchase_item = PurchaseItem.objects.create(purchase=purchase, **item_data)
             total_sum += purchase_item.soni * purchase_item.narx
-
         purchase.total_sum = total_sum
-        purchase.save()  # Balansni avtomatik yangilash uchun
-
+        purchase.save()
         return purchase
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
-
-        # Eski items ni o‘chirish
         instance.items.all().delete()
-
-        # Yangi ma'lumotlarni yangilash
         instance.ombor = validated_data.get('ombor', instance.ombor)
         instance.sana = validated_data.get('sana', instance.sana)
         instance.yetkazib_beruvchi = validated_data.get('yetkazib_beruvchi', instance.yetkazib_beruvchi)
         instance.save()
-
-        # Yangi items ni qo‘shish
         total_sum = 0
         if items_data:
             for item_data in items_data:
                 purchase_item = PurchaseItem.objects.create(purchase=instance, **item_data)
                 total_sum += purchase_item.soni * purchase_item.narx
-
         instance.total_sum = total_sum
         instance.save()
         return instance
@@ -165,6 +162,7 @@ class SotuvItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvItem
         fields = ['mahsulot', 'soni', 'narx']
+
 
 class SotuvSerializer(serializers.ModelSerializer):
     items = SotuvItemSerializer(many=True)
@@ -177,15 +175,12 @@ class SotuvSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop('items')
         sotuv = Sotuv.objects.create(**validated_data)
-
         total_sum = 0
         for item_data in items_data:
             sotuv_item = SotuvItem.objects.create(sotuv=sotuv, **item_data)
             total_sum += sotuv_item.soni * sotuv_item.narx
-
         sotuv.total_sum = total_sum
         sotuv.save()
-
         return sotuv
 
 
@@ -208,12 +203,13 @@ class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
         model = SotuvQaytarishItem
         fields = ['mahsulot', 'soni', 'narx']
 
+
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
     items = SotuvQaytarishItemSerializer(many=True)
 
     class Meta:
         model = SotuvQaytarish
-        fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'items']
+        fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'condition', 'items']
         extra_kwargs = {
             'id': {'read_only': True},
             'sana': {'read_only': True},
@@ -224,6 +220,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         qaytaruvchi = data.get('qaytaruvchi')
         items = data.get('items', [])
         ombor = data.get('ombor')
+        condition = data.get('condition')
 
         if not items:
             raise serializers.ValidationError("Kamida bitta mahsulot qaytarilishi kerak.")
@@ -252,6 +249,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items')
         qaytaruvchi = validated_data['qaytaruvchi']
         ombor = validated_data['ombor']
+        condition = validated_data['condition']
 
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
@@ -278,7 +276,6 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                     mahsulot=mahsulot,
                     defaults={'soni': 0}
                 )
-                # qaytarish_ombor_mahsulot.soni += soni
                 qaytarish_ombor_mahsulot.save()
 
                 sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(
@@ -291,8 +288,4 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
 
             sotuv_qaytarish.total_sum = total_sum
             sotuv_qaytarish.save()
-
-            qaytaruvchi.balance += total_sum
-            qaytaruvchi.save()
-
-        return sotuv_qaytarish
+            return sotuv_qaytarish
