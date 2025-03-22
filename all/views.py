@@ -416,6 +416,15 @@ class ActivityLogViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
 
 
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db import transaction
+from datetime import datetime, time, timedelta
+from django.utils import timezone
+from .models import SotuvQaytarish, Ombor, OmborMahsulot
+from .serializers import SotuvQaytarishSerializer
+
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     queryset = SotuvQaytarish.objects.all().order_by('-id')
     serializer_class = SotuvQaytarishSerializer
@@ -469,6 +478,7 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
         qaytaruvchi = sotuv_qaytarish.qaytaruvchi
         qaytarish_ombor = sotuv_qaytarish.ombor
         condition = sotuv_qaytarish.condition
+        total_sum = sotuv_qaytarish.total_sum
 
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
@@ -476,36 +486,34 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
             raise ValueError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
         with transaction.atomic():
+            # Qaytaruvchi omboriga mahsulotlarni qaytarish
             for item in sotuv_qaytarish.items.all():
                 ombor_mahsulot_qaytaruvchi, created = OmborMahsulot.objects.get_or_create(
                     ombor=qaytaruvchi_ombor,
                     mahsulot=item.mahsulot,
                     defaults={'soni': 0}
                 )
+                ombor_mahsulot_qaytaruvchi.soni += item.soni
                 ombor_mahsulot_qaytaruvchi.save()
 
-                try:
-                    ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
-                        ombor=qaytarish_ombor,
-                        mahsulot=item.mahsulot
-                    )
-                    ombor_mahsulot_qaytarish.soni -= item.soni
-                    if ombor_mahsulot_qaytarish.soni < 0:
-                        raise ValueError(f"{item.mahsulot.name} uchun qaytarish omborda yetarli mahsulot yo‘q")
-                    ombor_mahsulot_qaytarish.save()
-                except OmborMahsulot.DoesNotExist:
-                    raise ValueError(f"{item.mahsulot.name} qaytarish omborda topilmadi")
-
-            if condition == 'healthy':
-                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
-                if admin_ombor:
-                    for item in sotuv_qaytarish.items.all():
-                        ombor_mahsulot = OmborMahsulot.objects.get(
-                            ombor=admin_ombor,
+                # Qaytarish omboridan mahsulotlarni ayirish (faqat healthy bo'lsa)
+                if condition == 'healthy':
+                    try:
+                        ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
+                            ombor=qaytarish_ombor,
                             mahsulot=item.mahsulot
                         )
-                        ombor_mahsulot.soni -= item.soni
-                        ombor_mahsulot.save()
+                        ombor_mahsulot_qaytarish.soni -= item.soni
+                        if ombor_mahsulot_qaytarish.soni < 0:
+                            raise ValueError(f"{item.mahsulot.name} uchun qaytarish omborda yetarli mahsulot yo‘q")
+                        ombor_mahsulot_qaytarish.save()
+                    except OmborMahsulot.DoesNotExist:
+                        raise ValueError(f"{item.mahsulot.name} qaytarish omborda topilmadi")
+
+            # Balansni teskari yangilash: Har ikkala holatda ham balansdan ayiriladi
+            if total_sum > 0 and qaytaruvchi:
+                qaytaruvchi.balance -= total_sum  # O'chirilganda balansdan ayiramiz
+                qaytaruvchi.save()
 
     def destroy(self, request, *args, **kwargs):
         try:

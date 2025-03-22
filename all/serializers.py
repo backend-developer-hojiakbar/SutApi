@@ -198,11 +198,14 @@ class TokenSerializer(TokenObtainPairSerializer):
         return token
 
 
+from rest_framework import serializers
+from django.db import transaction
+from .models import SotuvQaytarish, SotuvQaytarishItem, Ombor, OmborMahsulot, User
+
 class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvQaytarishItem
-        fields = ['mahsulot', 'soni', 'narx', 'is_defective']  # is_defective qo'shildi
-
+        fields = ['mahsulot', 'soni', 'narx', 'is_defective']
 
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
     items = SotuvQaytarishItemSerializer(many=True)
@@ -245,7 +248,6 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        from django.db import transaction
         items_data = validated_data.pop('items')
         qaytaruvchi = validated_data['qaytaruvchi']
         ombor = validated_data['ombor']
@@ -257,36 +259,51 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
         with transaction.atomic():
+            # SotuvQaytarish obyektini yaratamiz
             sotuv_qaytarish = SotuvQaytarish.objects.create(**validated_data)
             total_sum = 0
 
+            # Har bir mahsulot uchun operatsiyalarni bajarish
             for item_data in items_data:
                 mahsulot = item_data['mahsulot']
                 soni = item_data['soni']
                 narx = item_data['narx']
+                is_defective = item_data.get('is_defective', False)
 
+                # Qaytaruvchi omboridan mahsulot sonini ayirish
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
                 if ombor_mahsulot.soni < soni:
                     raise serializers.ValidationError(f"{mahsulot.name} uchun omborda yetarli mahsulot yo‘q.")
                 ombor_mahsulot.soni -= soni
                 ombor_mahsulot.save()
 
-                qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-                    ombor=ombor,
-                    mahsulot=mahsulot,
-                    defaults={'soni': 0}
-                )
-                qaytarish_ombor_mahsulot.soni += soni  # Qaytarilgan mahsulot sonini qo'shish
-                qaytarish_ombor_mahsulot.save()
+                # Agar condition 'healthy' bo'lsa, tanlangan omborga mahsulot qo'shiladi
+                if condition == 'healthy':
+                    qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                        ombor=ombor,
+                        mahsulot=mahsulot,
+                        defaults={'soni': 0}
+                    )
+                    qaytarish_ombor_mahsulot.soni += soni
+                    qaytarish_ombor_mahsulot.save()
 
+                # SotuvQaytarishItem yaratish
                 sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(
                     sotuv_qaytarish=sotuv_qaytarish,
                     mahsulot=mahsulot,
                     soni=soni,
-                    narx=narx
+                    narx=narx,
+                    is_defective=is_defective
                 )
                 total_sum += soni * narx
 
+            # Total_sum ni saqlash
             sotuv_qaytarish.total_sum = total_sum
+
+            # Balansni yangilash: Har ikkala holatda ham balansga qo'shiladi
+            if total_sum > 0 and qaytaruvchi:
+                qaytaruvchi.balance += total_sum  # Har ikkala holatda ham balansga qo'shiladi
+                qaytaruvchi.save()
+
             sotuv_qaytarish.save()
             return sotuv_qaytarish
