@@ -201,7 +201,7 @@ class TokenSerializer(TokenObtainPairSerializer):
 class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvQaytarishItem
-        fields = ['mahsulot', 'soni', 'narx']
+        fields = ['mahsulot', 'soni', 'narx', 'is_defective']  # is_defective qo'shildi
 
 
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
@@ -276,6 +276,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                     mahsulot=mahsulot,
                     defaults={'soni': 0}
                 )
+                qaytarish_ombor_mahsulot.soni += soni  # Qaytarilgan mahsulot sonini qo'shish
                 qaytarish_ombor_mahsulot.save()
 
                 sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(

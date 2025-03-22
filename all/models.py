@@ -446,10 +446,11 @@ class SotuvQaytarish(models.Model):
 
 
 class SotuvQaytarishItem(models.Model):
-    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE, related_name='items')
-    mahsulot = models.ForeignKey('Mahsulot', on_delete=models.CASCADE)
+    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE)
+    mahsulot = models.ForeignKey(Mahsulot, on_delete=models.CASCADE)
     soni = models.PositiveIntegerField()
     narx = models.DecimalField(max_digits=10, decimal_places=2)
+    is_defective = models.BooleanField(default=False)  # Yangi maydon
 
     def __str__(self):
         return f"{self.mahsulot.name} - {self.soni} dona"
