@@ -354,6 +354,11 @@ class Payment(models.Model):
         )
 
 
+from django.db import transaction
+from django.core.exceptions import ValidationError
+from .models import Ombor, OmborMahsulot, Mahsulot, ActivityLog
+
+
 class SotuvQaytarish(models.Model):
     CONDITION_CHOICES = (
         ('healthy', 'Sog‘lom'),
@@ -364,7 +369,7 @@ class SotuvQaytarish(models.Model):
     qaytaruvchi = models.ForeignKey('User', on_delete=models.CASCADE, related_name='qaytarishlar')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     ombor = models.ForeignKey('Ombor', on_delete=models.CASCADE)
-    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')  # Yangi holat maydoni
     time = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -373,32 +378,71 @@ class SotuvQaytarish(models.Model):
     def calculate_total_sum(self):
         return sum(item.soni * item.narx for item in self.items.all())
 
+    def update_user_balance(self, total_sum):
+        """Qaytaruvchi balansini yangilash."""
+        self.qaytaruvchi.balance -= total_sum
+        self.qaytaruvchi.save()
+
+    def update_warehouse_stock(self):
+        """Ombordagi mahsulot sonini yangilash."""
+        # Qaytaruvchi omborini aniqlash
+        qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
+        if not qaytaruvchi_ombor:
+            raise ValidationError("Qaytaruvchiga biriktirilgan ombor topilmadi.")
+
+        for item in self.items.all():
+            # Qaytaruvchi omboridan mahsulotni ayirish
+            ombor_mahsulot_qaytaruvchi, created = OmborMahsulot.objects.get_or_create(
+                ombor=qaytaruvchi_ombor,
+                mahsulot=item.mahsulot,
+                defaults={'soni': 0}
+            )
+            if ombor_mahsulot_qaytaruvchi.soni < item.soni:
+                raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo'q")
+            ombor_mahsulot_qaytaruvchi.soni -= item.soni
+            ombor_mahsulot_qaytaruvchi.save()
+
+            # Qabul qiluvchi omborga mahsulotni qo'shish
+            ombor_mahsulot_qabul_qiluvchi, created = OmborMahsulot.objects.get_or_create(
+                ombor=self.ombor,  # SotuvQaytarish obyektidagi ombor
+                mahsulot=item.mahsulot,
+                defaults={'soni': 0}
+            )
+            ombor_mahsulot_qabul_qiluvchi.soni += item.soni
+            ombor_mahsulot_qabul_qiluvchi.save()
+
+            # Sog'lom mahsulotlar uchun admin omborini yangilash
+            if self.condition == 'healthy':
+                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
+                if admin_ombor:
+                    ombor_mahsulot_admin, created = OmborMahsulot.objects.get_or_create(
+                        ombor=admin_ombor,
+                        mahsulot=item.mahsulot,
+                        defaults={'soni': 0}
+                    )
+                    ombor_mahsulot_admin.soni += item.soni
+                    ombor_mahsulot_admin.save()
+
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
         with transaction.atomic():
             super().save(*args, **kwargs)
             total_sum = self.calculate_total_sum()
             self.total_sum = total_sum
-            if is_new and self.total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance -= self.total_sum  # Qaytaruvchi balansidan ayiramiz
-                self.qaytaruvchi.save()
-                if self.condition == 'healthy':
-                    admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
-                    if admin_ombor:
-                        for item in self.items.all():
-                            ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
-                                ombor=admin_ombor,
-                                mahsulot=item.mahsulot,
-                                defaults={'soni': 0}
-                            )
-                            ombor_mahsulot.soni += item.soni
-                            ombor_mahsulot.save()
+            super().save(update_fields=['total_sum'])
+
+            if self.total_sum > 0 and self.qaytaruvchi:
+                self.update_user_balance(self.total_sum)  # Balansni yangilash
+
+                try:
+                    self.update_warehouse_stock()  # Ombordagi mahsulot sonini yangilash
+                except ValidationError as e:
+                    raise ValidationError(str(e))
+
                 ActivityLog.objects.create(
                     user=self.qaytaruvchi,
                     action="Return Created",
                     details=f"Return #{self.pk} created with total sum {self.total_sum}, condition: {self.condition}"
                 )
-            super().save(update_fields=['total_sum'])
 
     def delete(self, *args, **kwargs):
         with transaction.atomic():
@@ -446,11 +490,11 @@ class SotuvQaytarish(models.Model):
 
 
 class SotuvQaytarishItem(models.Model):
-    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE, related_name='items')  # related_name qo'shildi
+    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE)
     mahsulot = models.ForeignKey(Mahsulot, on_delete=models.CASCADE)
     soni = models.PositiveIntegerField()
     narx = models.DecimalField(max_digits=10, decimal_places=2)
-    is_defective = models.BooleanField(default=False)
+    is_defective = models.BooleanField(default=False)  # Yangi maydon
 
     def __str__(self):
         return f"{self.mahsulot.name} - {self.soni} dona"

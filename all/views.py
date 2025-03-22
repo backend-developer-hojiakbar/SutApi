@@ -433,16 +433,49 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     filterset_fields = ['sana']
     pagination_class = CustomPagination
 
-    # get_queryset method remains unchanged
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        today = timezone.now().date()
+        date_filter = self.request.query_params.get('date_filter', None)
+        if date_filter:
+            if date_filter == 'today':
+                start_of_day = datetime.combine(today, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
+            elif date_filter == 'yesterday':
+                yesterday = today - timedelta(days=1)
+                start_of_day = datetime.combine(yesterday, time.min)
+                end_of_day = datetime.combine(yesterday, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
+            elif date_filter == 'last_7_days':
+                last_7_days = today - timedelta(days=6)
+                start_of_day = datetime.combine(last_7_days, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
+            elif date_filter == 'this_month':
+                first_day_of_month = today.replace(day=1)
+                start_of_day = datetime.combine(first_day_of_month, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
+            elif date_filter == 'this_year':
+                first_day_of_year = today.replace(month=1, day=1)
+                start_of_day = datetime.combine(first_day_of_year, time.min)
+                end_of_day = datetime.combine(today, time.max)
+                queryset = queryset.filter(sana__gte=start_of_day, sana__lte=end_of_day)
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+        self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    def perform_create(self, serializer):
+        serializer.save()
+
     def reverse_warehouse_stock(self, sotuv_qaytarish):
+        """Ombordagi mahsulot sonini teskari o'zgartirish."""
         qaytaruvchi = sotuv_qaytarish.qaytaruvchi
         qaytarish_ombor = sotuv_qaytarish.ombor
         condition = sotuv_qaytarish.condition
@@ -452,44 +485,50 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
         except Ombor.DoesNotExist:
             raise ValueError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
-        with transaction.atomic():
-            # Balansni qaytarish
-            qaytaruvchi.refresh_from_db()
-            qaytaruvchi.balance -= sotuv_qaytarish.total_sum
-            qaytaruvchi.save()
-
-            # Omborlarni qayta tiklash
-            for item in sotuv_qaytarish.items.all():
-                # Qaytaruvchi omborga mahsulotlarni qaytarish
-                ombor_mahsulot_qaytaruvchi, created = OmborMahsulot.objects.get_or_create(
+        for item in sotuv_qaytarish.items.all():
+            try:
+                # Qaytaruvchi omboriga mahsulotni qaytarish
+                ombor_mahsulot_qaytaruvchi = OmborMahsulot.objects.get(
                     ombor=qaytaruvchi_ombor,
-                    mahsulot=item.mahsulot,
-                    defaults={'soni': 0}
+                    mahsulot=item.mahsulot
                 )
                 ombor_mahsulot_qaytaruvchi.soni += item.soni
                 ombor_mahsulot_qaytaruvchi.save()
 
-                # Agar healthy bo'lsa, qaytarish omboridan ayirish
+                # Qaytarish omboridan mahsulotni ayirish
+                ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
+                    ombor=qaytarish_ombor,
+                    mahsulot=item.mahsulot
+                )
+                ombor_mahsulot_qaytarish.soni -= item.soni
+                ombor_mahsulot_qaytarish.save()
+
+                # Sog'lom mahsulotlar uchun admin omboridan mahsulotni ayirish
                 if condition == 'healthy':
-                    try:
-                        ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
-                            ombor=qaytarish_ombor,
+                    admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
+                    if admin_ombor:
+                        ombor_mahsulot_admin = OmborMahsulot.objects.get(
+                            ombor=admin_ombor,
                             mahsulot=item.mahsulot
                         )
-                        if ombor_mahsulot_qaytarish.soni < item.soni:
-                            raise ValueError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
-                        ombor_mahsulot_qaytarish.soni -= item.soni
-                        ombor_mahsulot_qaytarish.save()
-                    except OmborMahsulot.DoesNotExist:
-                        raise ValueError(f"{item.mahsulot.name} omborda topilmadi")
+                        ombor_mahsulot_admin.soni -= item.soni
+                        ombor_mahsulot_admin.save()
+
+            except OmborMahsulot.DoesNotExist:
+                raise ValueError(f"{item.mahsulot.name} omborda topilmadi")
 
     def destroy(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
-            self.reverse_warehouse_stock(instance)
-            instance.delete()
+
+            with transaction.atomic():
+                self.reverse_warehouse_stock(instance)
+                instance.delete()
+
             return Response(status=status.HTTP_204_NO_CONTENT)
+
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         except Exception as e:
-            return Response({"detail": f"Xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"detail": f"O‘chirishda xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
