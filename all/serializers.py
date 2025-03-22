@@ -36,7 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
 class ActivityLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActivityLog
-        fields = ['id', 'user', 'action', 'timestamp', 'details']
+        fields = ['id', 'user', 'action', 'timestamp', 'details', 'time']
 
 
 class LoginSerializer(serializers.Serializer):
@@ -76,7 +76,7 @@ class OmborMahsulotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OmborMahsulot
-        fields = ['id', 'ombor', 'ombor_name', 'mahsulot', 'mahsulot_name', 'soni']
+        fields = ['id', 'ombor', 'ombor_name', 'mahsulot', 'mahsulot_name', 'soni', 'time']
 
 
 class KategoriyaSerializer(serializers.ModelSerializer):
@@ -102,7 +102,7 @@ class MahsulotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Mahsulot
-        fields = ['id', 'name', 'sku', 'birlik', 'kategoriya', 'narx', 'rasm']
+        fields = ['id', 'name', 'sku', 'birlik', 'kategoriya', 'narx', 'rasm', 'time']
 
     def validate_name(self, value):
         if len(value) < 3:
@@ -127,7 +127,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Purchase
-        fields = ['ombor', 'sana', 'yetkazib_beruvchi', 'items', 'total_sum']
+        fields = ['ombor', 'sana', 'yetkazib_beruvchi', 'items', 'total_sum', 'time']
         extra_kwargs = {'id': {'read_only': True}, 'total_sum': {'read_only': True}}
 
     def create(self, validated_data):
@@ -169,7 +169,7 @@ class SotuvSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Sotuv
-        fields = ['id', 'sana', 'sotib_oluvchi', 'total_sum', 'ombor', 'items']
+        fields = ['id', 'sana', 'sotib_oluvchi', 'total_sum', 'ombor', 'items', 'time']
         extra_kwargs = {'id': {'read_only': True}, 'total_sum': {'read_only': True}, 'sana': {'read_only': True}}
 
     def create(self, validated_data):
@@ -209,7 +209,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SotuvQaytarish
-        fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'condition', 'items']
+        fields = ['id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'condition', 'items', 'time']
         extra_kwargs = {
             'id': {'read_only': True},
             'sana': {'read_only': True},
