@@ -207,6 +207,7 @@ class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
         model = SotuvQaytarishItem
         fields = ['mahsulot', 'soni', 'narx', 'is_defective']
 
+
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
     items = SotuvQaytarishItemSerializer(many=True)
 
@@ -223,7 +224,6 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         qaytaruvchi = data.get('qaytaruvchi')
         items = data.get('items', [])
         ombor = data.get('ombor')
-        condition = data.get('condition')
 
         if not items:
             raise serializers.ValidationError("Kamida bitta mahsulot qaytarilishi kerak.")
@@ -240,7 +240,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
                 if ombor_mahsulot.soni < soni:
                     raise serializers.ValidationError(
-                        f"{mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni}, talab qilingan: {soni}"
+                        f"{mahsulot.name} uchun qaytaruvchi omborda yetarli mahsulot yo‘q. Mavjud: {ombor_mahsulot.soni}"
                     )
             except OmborMahsulot.DoesNotExist:
                 raise serializers.ValidationError(f"{mahsulot.name} mahsuloti qaytaruvchi omborda mavjud emas.")
@@ -248,6 +248,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        from django.db import transaction
         items_data = validated_data.pop('items')
         qaytaruvchi = validated_data['qaytaruvchi']
         ombor = validated_data['ombor']
@@ -259,16 +260,15 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Qaytaruvchiga bog‘langan ombor topilmadi.")
 
         with transaction.atomic():
-            # SotuvQaytarish obyektini yaratamiz
-            sotuv_qaytarish = SotuvQaytarish.objects.create(**validated_data)
+            # Qaytarish ob'ektini yaratish
+            sotuv_qaytarish = SotuvQaytarish(**validated_data)
             total_sum = 0
 
-            # Har bir mahsulot uchun operatsiyalarni bajarish
+            # Itemlarni qayta ishlash
             for item_data in items_data:
                 mahsulot = item_data['mahsulot']
                 soni = item_data['soni']
                 narx = item_data['narx']
-                is_defective = item_data.get('is_defective', False)
 
                 # Qaytaruvchi omboridan mahsulot sonini ayirish
                 ombor_mahsulot = OmborMahsulot.objects.get(ombor=qaytaruvchi_ombor, mahsulot=mahsulot)
@@ -277,7 +277,7 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                 ombor_mahsulot.soni -= soni
                 ombor_mahsulot.save()
 
-                # Agar condition 'healthy' bo'lsa, tanlangan omborga mahsulot qo'shiladi
+                # Agar condition healthy bo'lsa, tanlangan omborga qo'shish
                 if condition == 'healthy':
                     qaytarish_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
                         ombor=ombor,
@@ -287,23 +287,22 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                     qaytarish_ombor_mahsulot.soni += soni
                     qaytarish_ombor_mahsulot.save()
 
-                # SotuvQaytarishItem yaratish
-                sotuv_qaytarish_item = SotuvQaytarishItem.objects.create(
+                # Itemni yaratish
+                SotuvQaytarishItem.objects.create(
                     sotuv_qaytarish=sotuv_qaytarish,
                     mahsulot=mahsulot,
                     soni=soni,
-                    narx=narx,
-                    is_defective=is_defective
+                    narx=narx
                 )
                 total_sum += soni * narx
 
-            # Total_sum ni saqlash
+            # Total_sum ni hisoblash va balansni yangilash
             sotuv_qaytarish.total_sum = total_sum
+            sotuv_qaytarish.save()  # Avval qaytarishni saqlash
 
-            # Balansni yangilash: Har ikkala holatda ham balansga qo'shiladi
-            if total_sum > 0 and qaytaruvchi:
-                qaytaruvchi.balance += total_sum  # Har ikkala holatda ham balansga qo'shiladi
-                qaytaruvchi.save()
+            # Qaytaruvchi balansini yangilash
+            qaytaruvchi.refresh_from_db()  # Ma'lumotlarni yangilash
+            qaytaruvchi.balance += total_sum
+            qaytaruvchi.save()
 
-            sotuv_qaytarish.save()
             return sotuv_qaytarish

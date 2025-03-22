@@ -118,20 +118,9 @@ class SotuvQaytarishItemInline(admin.TabularInline):
     model = SotuvQaytarishItem
     extra = 1
 
-
 @admin.register(SotuvQaytarish)
 class SotuvQaytarishAdmin(admin.ModelAdmin):
     inlines = [SotuvQaytarishItemInline]
     list_display = ('id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'condition')
     search_fields = ('qaytaruvchi__username', 'sana')
     list_filter = ('condition',)
-
-    def save_formset(self, request, form, formset, change):
-        with transaction.atomic():
-            form.instance.save()
-            instances = formset.save(commit=False)
-            for instance in instances:
-                if not instance.pk:
-                    instance.save()
-            for obj in formset.deleted_objects:
-                obj.delete()

@@ -364,7 +364,7 @@ class SotuvQaytarish(models.Model):
     qaytaruvchi = models.ForeignKey('User', on_delete=models.CASCADE, related_name='qaytarishlar')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     ombor = models.ForeignKey('Ombor', on_delete=models.CASCADE)
-    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')  # Yangi holat maydoni
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')
     time = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -446,11 +446,11 @@ class SotuvQaytarish(models.Model):
 
 
 class SotuvQaytarishItem(models.Model):
-    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE)
+    sotuv_qaytarish = models.ForeignKey(SotuvQaytarish, on_delete=models.CASCADE, related_name='items')  # related_name qo'shildi
     mahsulot = models.ForeignKey(Mahsulot, on_delete=models.CASCADE)
     soni = models.PositiveIntegerField()
     narx = models.DecimalField(max_digits=10, decimal_places=2)
-    is_defective = models.BooleanField(default=False)  # Yangi maydon
+    is_defective = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.mahsulot.name} - {self.soni} dona"
