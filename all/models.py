@@ -501,3 +501,114 @@ class SotuvQaytarishItem(models.Model):
             qaytarish_ombor_mahsulot.soni -= self.soni
             qaytarish_ombor_mahsulot.save()
         super().delete(*args, **kwargs)
+
+
+class DealerRequest(models.Model):
+    CONDITION_CHOICES = (
+        ('healthy', 'Sog‘lom'),
+        ('unhealthy', 'Nosog‘lom'),
+    )
+    STATUS_CHOICES = (
+        ('pending', 'Kutilmoqda'),
+        ('approved', 'Tasdiqlangan'),
+        ('rejected', 'Rad etilgan'),
+    )
+
+    id = models.BigAutoField(primary_key=True, editable=False)
+    dealer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dealer_requests',
+                               limit_choices_to={'user_type__ne': 'admin'}, null=True, blank=True)  # Admin emas
+    shop = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shop_requests',
+                             limit_choices_to={'user_type__ne': 'admin'})  # Admin emas
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        dealer_name = self.dealer.username if self.dealer else "Admin"
+        return f"{dealer_name} -> {self.shop.username} - {self.created_at}"
+
+    def calculate_total_sum(self):
+        return sum(item.quantity * item.price for item in self.items.all())
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            total_sum = self.calculate_total_sum()
+            if self.total_sum != total_sum:
+                self.total_sum = total_sum
+                super().save(update_fields=['total_sum'])
+
+            if self.status == 'approved' and not self.is_active:
+                self.handle_approval()
+
+    def handle_approval(self):
+        shop_ombor = Ombor.objects.filter(responsible_person=self.shop).first()
+        admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
+
+        if not shop_ombor:
+            raise ValidationError("Do‘kon ombori topilmadi.")
+        if not admin_ombor and self.condition == 'healthy':
+            raise ValidationError("Admin ombori topilmadi.")
+
+        for item in self.items.all():
+            shop_ombor_mahsulot = OmborMahsulot.objects.filter(ombor=shop_ombor, mahsulot=item.product).first()
+            if not shop_ombor_mahsulot or shop_ombor_mahsulot.soni < item.quantity:
+                raise ValidationError(f"{item.product.name} uchun do‘kon omborida yetarli mahsulot yo‘q.")
+
+            shop_ombor_mahsulot.soni -= item.quantity
+            shop_ombor_mahsulot.save()
+
+            if self.condition == 'healthy':
+                admin_ombor_mahsulot, created = OmborMahsulot.objects.get_or_create(
+                    ombor=admin_ombor,
+                    mahsulot=item.product,
+                    defaults={'soni': 0}
+                )
+                admin_ombor_mahsulot.soni += item.quantity
+                admin_ombor_mahsulot.save()
+
+        self.shop.balance += self.total_sum
+        self.shop.save()
+
+        ActivityLog.objects.create(
+            user=self.dealer if self.dealer else self.shop,  # Agar dealer bo‘lmasa, shop uchun log
+            action="Dealer Request Approved",
+            details=f"Request #{self.pk} approved for {self.shop.username} with total sum {self.total_sum}, condition: {self.condition}"
+        )
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            if self.status == 'approved' and not self.is_active:
+                shop_ombor = Ombor.objects.filter(responsible_person=self.shop).first()
+                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
+
+                for item in self.items.all():
+                    shop_ombor_mahsulot = OmborMahsulot.objects.get(ombor=shop_ombor, mahsulot=item.product)
+                    shop_ombor_mahsulot.soni += item.quantity
+                    shop_ombor_mahsulot.save()
+
+                    if self.condition == 'healthy' and admin_ombor:
+                        admin_ombor_mahsulot = OmborMahsulot.objects.get(ombor=admin_ombor, mahsulot=item.product)
+                        admin_ombor_mahsulot.soni -= item.quantity
+                        admin_ombor_mahsulot.save()
+
+                self.shop.balance -= self.total_sum
+                self.shop.save()
+
+            super().delete(*args, **kwargs)
+
+class DealerRequestItem(models.Model):
+    dealer_request = models.ForeignKey(DealerRequest, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Mahsulot, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.product.name} - {self.quantity} dona"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.dealer_request.save()  # Total sum yangilanishi uchun

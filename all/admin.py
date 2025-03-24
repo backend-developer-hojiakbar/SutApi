@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, SotuvQaytarish, SotuvQaytarishItem, OmborMahsulot, ActivityLog
+from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, SotuvQaytarish, SotuvQaytarishItem, OmborMahsulot, ActivityLog, DealerRequest, DealerRequestItem
 from django.contrib.auth.admin import UserAdmin
 from django.db import transaction
 
@@ -124,3 +124,15 @@ class SotuvQaytarishAdmin(admin.ModelAdmin):
     list_display = ('id', 'sana', 'qaytaruvchi', 'total_sum', 'ombor', 'condition')
     search_fields = ('qaytaruvchi__username', 'sana')
     list_filter = ('condition',)
+
+
+class DealerRequestItemInline(admin.TabularInline):
+    model = DealerRequestItem
+    extra = 1
+
+@admin.register(DealerRequest)
+class DealerRequestAdmin(admin.ModelAdmin):
+    inlines = [DealerRequestItemInline]
+    list_display = ('id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at')
+    list_filter = ('condition', 'status', 'is_active')
+    search_fields = ('dealer__username', 'shop__username')

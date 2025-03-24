@@ -1,10 +1,10 @@
 from rest_framework import viewsets, permissions, filters, status, views, response
 from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, \
-    OmborMahsulot, SotuvQaytarishItem, SotuvQaytarish, ActivityLog
+    OmborMahsulot, SotuvQaytarishItem, SotuvQaytarish, ActivityLog, DealerRequestItem, DealerRequest
 from .serializers import UserSerializer, OmborSerializer, KategoriyaSerializer, BirlikSerializer, MahsulotSerializer, \
     PurchaseSerializer, PurchaseItemSerializer, SotuvSerializer, SotuvItemSerializer, PaymentSerializer, \
     LoginSerializer, OmborMahsulotSerializer, TokenSerializer, LogoutSerializer, SotuvQaytarishSerializer, \
-    SotuvQaytarishItemSerializer, ActivityLogSerializer
+    SotuvQaytarishItemSerializer, ActivityLogSerializer, DealerRequestItemSerializer, DealerRequestSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -519,3 +519,58 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": f"O‘chirishda xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DealerRequestViewSet(viewsets.ModelViewSet):
+    queryset = DealerRequest.objects.all().order_by('-id')
+    serializer_class = DealerRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.user_type == 'admin':
+            return DealerRequest.objects.all().order_by('-id')
+        elif user.user_type == 'dealer':
+            return DealerRequest.objects.filter(dealer=user).order_by('-id')
+        return DealerRequest.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def approve(self, request, pk=None):
+        dealer_request = self.get_object()
+        if dealer_request.status != 'pending':
+            return Response({"detail": "Faqat kutilayotgan so‘rovlar tasdiqlanishi mumkin."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            dealer_request.status = 'approved'
+            dealer_request.is_active = False
+            dealer_request.save()  # `save` ichida `handle_approval` ishlaydi
+        return Response({"detail": "So‘rov tasdiqlandi."}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def reject(self, request, pk=None):
+        dealer_request = self.get_object()
+        if dealer_request.status != 'pending':
+            return Response({"detail": "Faqat kutilayotgan so‘rovlar rad etilishi mumkin."}, status=status.HTTP_400_BAD_REQUEST)
+
+        dealer_request.status = 'rejected'
+        dealer_request.is_active = False
+        dealer_request.save()
+        return Response({"detail": "So‘rov rad etildi."}, status=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.status != 'pending':
+            return Response({"detail": "Faqat kutilayotgan so‘rovlar o‘chirilishi mumkin."}, status=status.HTTP_400_BAD_REQUEST)
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import User, Ombor, Kategoriya, Birlik, Mahsulot, Purchase, PurchaseItem, Sotuv, SotuvItem, Payment, \
-    OmborMahsulot, SotuvQaytarish, SotuvQaytarishItem, ActivityLog
+    OmborMahsulot, SotuvQaytarish, SotuvQaytarishItem, ActivityLog, DealerRequestItem, DealerRequest
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = (
             'id', 'username', 'password', 'email', 'user_type', 'address', 'phone_number', 'is_active',
-            'last_sotuv_vaqti', 'balance', 'created_by', 'image'
+            'last_sotuv_vaqti', 'balance', 'created_by', 'image', 'time'
         )
         extra_kwargs = {'password': {'write_only': True}}
 
@@ -314,3 +314,67 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
             self.update_warehouse_stock(qaytaruvchi, ombor, items_data, condition)
 
             return sotuv_qaytarish
+
+
+class DealerRequestItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DealerRequestItem
+        fields = ['product', 'quantity', 'price']
+
+
+class DealerRequestSerializer(serializers.ModelSerializer):
+    items = DealerRequestItemSerializer(many=True)
+
+    class Meta:
+        model = DealerRequest
+        fields = ['id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at', 'updated_at', 'items']
+        extra_kwargs = {
+            'id': {'read_only': True},
+            'total_sum': {'read_only': True},
+            'created_at': {'read_only': True},
+            'updated_at': {'read_only': True},
+        }
+
+    def validate(self, data):
+        user = self.context['request'].user
+        shop = data.get('shop')
+        items = data.get('items', [])
+        dealer = data.get('dealer', None)
+
+        if user.user_type not in ['dealer', 'admin']:
+            raise serializers.ValidationError("Faqat diler yoki admin so‘rov yubora oladi.")
+        if shop.user_type == 'admin':
+            raise serializers.ValidationError("Shop admin bo‘lmasligi kerak.")
+        if dealer and dealer.user_type == 'admin':
+            raise serializers.ValidationError("Dealer admin bo‘lmasligi kerak.")
+        if not items:
+            raise serializers.ValidationError("Kamida bitta mahsulot qo‘shilishi kerak.")
+
+        shop_ombor = Ombor.objects.filter(responsible_person=shop).first()
+        if not shop_ombor:
+            raise serializers.ValidationError("Do‘kon ombori topilmadi.")
+
+        for item in items:
+            product = item['product']
+            quantity = item['quantity']
+            ombor_mahsulot = OmborMahsulot.objects.filter(ombor=shop_ombor, mahsulot=product).first()
+            if not ombor_mahsulot or ombor_mahsulot.soni < quantity:
+                raise serializers.ValidationError(f"{product.name} uchun do‘kon omborida yetarli mahsulot yo‘q.")
+
+        return data
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        user = self.context['request'].user
+        if user.user_type == 'dealer' and 'dealer' not in validated_data:
+            validated_data['dealer'] = user
+        dealer_request = DealerRequest.objects.create(**validated_data)
+
+        total_sum = 0
+        for item_data in items_data:
+            dealer_request_item = DealerRequestItem.objects.create(dealer_request=dealer_request, **item_data)
+            total_sum += item_data['quantity'] * item_data['price']
+
+        dealer_request.total_sum = total_sum
+        dealer_request.save()
+        return dealer_request

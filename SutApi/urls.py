@@ -37,6 +37,7 @@ router.register(r'payments', PaymentViewSet)
 router.register(r'ombor_mahsulot', OmborMahsulotViewSet)
 router.register(r'sotuv_qaytarish', SotuvQaytarishViewSet)
 router.register(r'activities', ActivityLogViewSet)
+router.register(r'dealer-requests', DealerRequestViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
