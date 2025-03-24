@@ -369,7 +369,7 @@ class SotuvQaytarish(models.Model):
     qaytaruvchi = models.ForeignKey('User', on_delete=models.CASCADE, related_name='qaytarishlar')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     ombor = models.ForeignKey('Ombor', on_delete=models.CASCADE)
-    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')  # Yangi holat maydoni
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')
     time = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -380,12 +380,12 @@ class SotuvQaytarish(models.Model):
 
     def update_user_balance(self, total_sum):
         """Qaytaruvchi balansini yangilash."""
-        self.qaytaruvchi.balance -= total_sum
+        # Balansga total_sum qo'shiladi (healthy yoki unhealthy bo'lishidan qat'i nazar)
+        self.qaytaruvchi.balance += total_sum
         self.qaytaruvchi.save()
 
     def update_warehouse_stock(self):
         """Ombordagi mahsulot sonini yangilash."""
-        # Qaytaruvchi omborini aniqlash
         qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
         if not qaytaruvchi_ombor:
             raise ValidationError("Qaytaruvchiga biriktirilgan ombor topilmadi.")
@@ -402,26 +402,15 @@ class SotuvQaytarish(models.Model):
             ombor_mahsulot_qaytaruvchi.soni -= item.soni
             ombor_mahsulot_qaytaruvchi.save()
 
-            # Qabul qiluvchi omborga mahsulotni qo'shish
-            ombor_mahsulot_qabul_qiluvchi, created = OmborMahsulot.objects.get_or_create(
-                ombor=self.ombor,  # SotuvQaytarish obyektidagi ombor
-                mahsulot=item.mahsulot,
-                defaults={'soni': 0}
-            )
-            ombor_mahsulot_qabul_qiluvchi.soni += item.soni
-            ombor_mahsulot_qabul_qiluvchi.save()
-
-            # Sog'lom mahsulotlar uchun admin omborini yangilash
+            # Agar condition 'healthy' bo'lsa, tanlangan omborga mahsulot qo'shiladi
             if self.condition == 'healthy':
-                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
-                if admin_ombor:
-                    ombor_mahsulot_admin, created = OmborMahsulot.objects.get_or_create(
-                        ombor=admin_ombor,
-                        mahsulot=item.mahsulot,
-                        defaults={'soni': 0}
-                    )
-                    ombor_mahsulot_admin.soni += item.soni
-                    ombor_mahsulot_admin.save()
+                ombor_mahsulot_qabul_qiluvchi, created = OmborMahsulot.objects.get_or_create(
+                    ombor=self.ombor,
+                    mahsulot=item.mahsulot,
+                    defaults={'soni': 0}
+                )
+                ombor_mahsulot_qabul_qiluvchi.soni += item.soni
+                ombor_mahsulot_qabul_qiluvchi.save()
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
@@ -432,7 +421,6 @@ class SotuvQaytarish(models.Model):
 
             if self.total_sum > 0 and self.qaytaruvchi:
                 self.update_user_balance(self.total_sum)  # Balansni yangilash
-
                 try:
                     self.update_warehouse_stock()  # Ombordagi mahsulot sonini yangilash
                 except ValidationError as e:
@@ -444,22 +432,14 @@ class SotuvQaytarish(models.Model):
                     details=f"Return #{self.pk} created with total sum {self.total_sum}, condition: {self.condition}"
                 )
 
+    # `delete` metodida ham mos o'zgarishlarni kiritish
     def delete(self, *args, **kwargs):
         with transaction.atomic():
             total_sum = self.total_sum
             if total_sum > 0 and self.qaytaruvchi:
-                self.qaytaruvchi.balance += total_sum  # Balansni qaytarish
+                self.qaytaruvchi.balance -= total_sum  # Balansni qaytarish
                 self.qaytaruvchi.save()
-            for item in self.items.all():
-                ombor_mahsulot = OmborMahsulot.objects.filter(
-                    ombor=self.ombor,
-                    mahsulot=item.mahsulot
-                ).first()
-                if ombor_mahsulot:
-                    ombor_mahsulot.soni -= item.soni
-                    if ombor_mahsulot.soni < 0:
-                        raise ValidationError(f"{item.mahsulot.name} uchun omborda yetarli mahsulot yo‘q")
-                    ombor_mahsulot.save()
+
             qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=self.qaytaruvchi).first()
             if qaytaruvchi_ombor:
                 for item in self.items.all():
@@ -470,17 +450,18 @@ class SotuvQaytarish(models.Model):
                     )
                     ombor_mahsulot_qaytaruvchi.soni += item.soni
                     ombor_mahsulot_qaytaruvchi.save()
+
             if self.condition == 'healthy':
-                admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
-                if admin_ombor:
-                    for item in self.items.all():
-                        ombor_mahsulot = OmborMahsulot.objects.filter(
-                            ombor=admin_ombor,
-                            mahsulot=item.mahsulot
-                        ).first()
-                        if ombor_mahsulot and ombor_mahsulot.soni >= item.soni:
-                            ombor_mahsulot.soni -= item.soni
-                            ombor_mahsulot.save()
+                ombor_mahsulot = OmborMahsulot.objects.filter(
+                    ombor=self.ombor,
+                    mahsulot__in=self.items.all().values_list('mahsulot', flat=True)
+                )
+                for item in self.items.all():
+                    ombor_mahsulot_qabul = ombor_mahsulot.filter(mahsulot=item.mahsulot).first()
+                    if ombor_mahsulot_qabul and ombor_mahsulot_qabul.soni >= item.soni:
+                        ombor_mahsulot_qabul.soni -= item.soni
+                        ombor_mahsulot_qabul.save()
+
             ActivityLog.objects.create(
                 user=self.qaytaruvchi,
                 action="Return Deleted",

@@ -206,7 +206,7 @@ from .models import SotuvQaytarish, SotuvQaytarishItem, Ombor, OmborMahsulot, Us
 class SotuvQaytarishItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SotuvQaytarishItem
-        fields = ['mahsulot', 'soni', 'narx', 'is_defective']  # is_defective qo'shildi
+        fields = ['mahsulot', 'soni', 'narx', 'is_defective']
 
 
 class SotuvQaytarishSerializer(serializers.ModelSerializer):
@@ -229,7 +229,6 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
 
         if not items:
             raise serializers.ValidationError("Kamida bitta mahsulot qaytarilishi kerak.")
-
         try:
             qaytaruvchi_ombor = Ombor.objects.get(responsible_person=qaytaruvchi)
         except Ombor.DoesNotExist:
@@ -251,12 +250,11 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
 
     def update_user_balance(self, qaytaruvchi, total_sum):
         """Qaytaruvchi balansini yangilash."""
-        qaytaruvchi.balance -= total_sum
+        qaytaruvchi.balance += total_sum  # Balansga total_sum qo'shiladi
         qaytaruvchi.save()
 
-    def update_warehouse_stock(self, qaytaruvchi, ombor, items):
+    def update_warehouse_stock(self, qaytaruvchi, ombor, items, condition):
         """Ombordagi mahsulot sonini yangilash."""
-        # Qaytaruvchi omborini aniqlash
         qaytaruvchi_ombor = Ombor.objects.filter(responsible_person=qaytaruvchi).first()
         if not qaytaruvchi_ombor:
             raise serializers.ValidationError("Qaytaruvchiga biriktirilgan ombor topilmadi.")
@@ -276,14 +274,15 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
             ombor_mahsulot_qaytaruvchi.soni -= soni
             ombor_mahsulot_qaytaruvchi.save()
 
-            # Qabul qiluvchi omborga mahsulotni qo'shish
-            ombor_mahsulot_qabul_qiluvchi, created = OmborMahsulot.objects.get_or_create(
-                ombor=ombor,  # SotuvQaytarish obyektidagi ombor
-                mahsulot=mahsulot,
-                defaults={'soni': 0}
-            )
-            ombor_mahsulot_qabul_qiluvchi.soni += soni
-            ombor_mahsulot_qabul_qiluvchi.save()
+            # Agar condition 'healthy' bo'lsa, tanlangan omborga mahsulot qo'shiladi
+            if condition == 'healthy':
+                ombor_mahsulot_qabul_qiluvchi, created = OmborMahsulot.objects.get_or_create(
+                    ombor=ombor,
+                    mahsulot=mahsulot,
+                    defaults={'soni': 0}
+                )
+                ombor_mahsulot_qabul_qiluvchi.soni += soni
+                ombor_mahsulot_qabul_qiluvchi.save()
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -292,11 +291,9 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
         condition = validated_data['condition']
 
         with transaction.atomic():
-            # SotuvQaytarish obyektini yaratish
             sotuv_qaytarish = SotuvQaytarish.objects.create(**validated_data)
             total_sum = 0
 
-            # SotuvQaytarishItem obyektlarini yaratish va umumiy summani hisoblash
             for item_data in items_data:
                 mahsulot = item_data['mahsulot']
                 soni = item_data['soni']
@@ -310,14 +307,10 @@ class SotuvQaytarishSerializer(serializers.ModelSerializer):
                 )
                 total_sum += soni * narx
 
-            # Umumiy summani saqlash
             sotuv_qaytarish.total_sum = total_sum
             sotuv_qaytarish.save()
 
-            # Balansni yangilash
             self.update_user_balance(qaytaruvchi, total_sum)
-
-            # Omborni yangilash
-            self.update_warehouse_stock(qaytaruvchi, ombor, items_data)
+            self.update_warehouse_stock(qaytaruvchi, ombor, items_data, condition)
 
             return sotuv_qaytarish

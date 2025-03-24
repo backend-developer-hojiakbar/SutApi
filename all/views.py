@@ -434,6 +434,7 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
 
     def get_queryset(self):
+        # Bu qism o'zgarmaydi
         queryset = super().get_queryset()
         today = timezone.now().date()
         date_filter = self.request.query_params.get('date_filter', None)
@@ -495,24 +496,14 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
                 ombor_mahsulot_qaytaruvchi.soni += item.soni
                 ombor_mahsulot_qaytaruvchi.save()
 
-                # Qaytarish omboridan mahsulotni ayirish
-                ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
-                    ombor=qaytarish_ombor,
-                    mahsulot=item.mahsulot
-                )
-                ombor_mahsulot_qaytarish.soni -= item.soni
-                ombor_mahsulot_qaytarish.save()
-
-                # Sog'lom mahsulotlar uchun admin omboridan mahsulotni ayirish
+                # Agar condition 'healthy' bo'lsa, qaytarish omboridan mahsulotni ayirish
                 if condition == 'healthy':
-                    admin_ombor = Ombor.objects.filter(responsible_person__user_type='admin').first()
-                    if admin_ombor:
-                        ombor_mahsulot_admin = OmborMahsulot.objects.get(
-                            ombor=admin_ombor,
-                            mahsulot=item.mahsulot
-                        )
-                        ombor_mahsulot_admin.soni -= item.soni
-                        ombor_mahsulot_admin.save()
+                    ombor_mahsulot_qaytarish = OmborMahsulot.objects.get(
+                        ombor=qaytarish_ombor,
+                        mahsulot=item.mahsulot
+                    )
+                    ombor_mahsulot_qaytarish.soni -= item.soni
+                    ombor_mahsulot_qaytarish.save()
 
             except OmborMahsulot.DoesNotExist:
                 raise ValueError(f"{item.mahsulot.name} omborda topilmadi")
@@ -520,15 +511,11 @@ class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
-
             with transaction.atomic():
                 self.reverse_warehouse_stock(instance)
                 instance.delete()
-
             return Response(status=status.HTTP_204_NO_CONTENT)
-
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
         except Exception as e:
             return Response({"detail": f"O‘chirishda xatolik: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
