@@ -324,7 +324,6 @@ class DealerRequestItemSerializer(serializers.ModelSerializer):
 
 class DealerRequestSerializer(serializers.ModelSerializer):
     items = DealerRequestItemSerializer(many=True)
-
     class Meta:
         model = DealerRequest
         fields = ['id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at', 'updated_at', 'items']

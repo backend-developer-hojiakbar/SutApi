@@ -514,10 +514,8 @@ class DealerRequest(models.Model):
     )
 
     id = models.BigAutoField(primary_key=True, editable=False)
-    dealer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dealer_requests',
-                               limit_choices_to={'user_type__ne': 'admin'}, null=True, blank=True)  # Admin emas
-    shop = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shop_requests',
-                             limit_choices_to={'user_type__ne': 'admin'})  # Admin emas
+    dealer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dealer_requests')
+    shop = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shop_requests')
     condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='healthy')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_sum = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
