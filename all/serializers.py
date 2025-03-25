@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = (
             'id', 'username', 'password', 'email', 'user_type', 'address', 'phone_number', 'is_active',
-            'last_sotuv_vaqti', 'balance', 'created_by', 'image', 'time'
+            'last_sotuv_vaqti', 'balance', 'created_by', 'image'
         )
         extra_kwargs = {'password': {'write_only': True}}
 
@@ -76,7 +76,7 @@ class OmborMahsulotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OmborMahsulot
-        fields = ['id', 'ombor', 'ombor_name', 'mahsulot', 'mahsulot_name', 'soni', 'time']
+        fields = ['id', 'ombor', 'ombor_name', 'mahsulot', 'mahsulot_name', 'soni']
 
 
 class KategoriyaSerializer(serializers.ModelSerializer):

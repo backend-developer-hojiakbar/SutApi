@@ -189,10 +189,11 @@ class OmborViewSet(viewsets.ModelViewSet):
 
 
 class OmborMahsulotViewSet(viewsets.ModelViewSet):
-    queryset = OmborMahsulot.objects.all().order_by('id')
+    queryset = OmborMahsulot.objects.all()
     serializer_class = OmborMahsulotSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['ombor', 'mahsulot']
 
 
 class KategoriyaViewSet(viewsets.ModelViewSet):

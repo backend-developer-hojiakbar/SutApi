@@ -44,8 +44,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_sotuv_vaqti = models.DateTimeField(blank=True, null=True)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_by = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
-    image = models.ImageField(upload_to='user_images/', blank=True, null=True)  # Yangi rasm maydoni
-    time = models.DateTimeField(auto_now_add=True)
+    image = models.ImageField(upload_to='user_images/', blank=True, null=True)
 
     objects = CustomUserManager()
 
