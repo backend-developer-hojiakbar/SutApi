@@ -45,7 +45,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_by = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
     image = models.ImageField(upload_to='user_images/', blank=True, null=True)
-    time = models.DateTimeField(null=True, blank=True)  # Vaqtincha qo'shiladi
+    time = models.DateTimeField(null=False, default=timezone.now)  # NULL emas, default qiymat bilan
 
     objects = CustomUserManager()
 
