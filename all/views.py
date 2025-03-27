@@ -20,6 +20,7 @@ from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from datetime import datetime, time, timedelta
+from django.core.exceptions import ValidationError
 
 
 class CustomPagination(PageNumberPagination):
@@ -172,7 +173,6 @@ class OmborViewSet(viewsets.ModelViewSet):
             if user.user_type in ['admin', 'omborchi']:
                 return Ombor.objects.all().order_by('id')
             return Ombor.objects.filter(responsible_person=user).order_by('id')
-        return Ombor.objects.none()
 
     def create(self, request, *args, **kwargs):
         user = request.user
@@ -426,6 +426,7 @@ from django.utils import timezone
 from .models import SotuvQaytarish, Ombor, OmborMahsulot
 from .serializers import SotuvQaytarishSerializer
 
+
 class SotuvQaytarishViewSet(viewsets.ModelViewSet):
     queryset = SotuvQaytarish.objects.all().order_by('-id')
     serializer_class = SotuvQaytarishSerializer
@@ -552,10 +553,13 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
         if dealer_request.status != 'pending':
             return Response({"detail": "Faqat kutilayotgan so‘rovlar tasdiqlanishi mumkin."}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            dealer_request.status = 'approved'
-            dealer_request.is_active = False
-            dealer_request.save()  # `save` ichida `handle_approval` ishlaydi
+        try:
+            with transaction.atomic():
+                dealer_request.status = 'approved'
+                dealer_request.is_active = True  # Tasdiqlangan so'rov aktiv bo'ladi
+                dealer_request.save()  # `save` ichida `handle_approval` ishlaydi
+        except ValidationError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"detail": "So‘rov tasdiqlandi."}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
@@ -565,7 +569,7 @@ class DealerRequestViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Faqat kutilayotgan so‘rovlar rad etilishi mumkin."}, status=status.HTTP_400_BAD_REQUEST)
 
         dealer_request.status = 'rejected'
-        dealer_request.is_active = False
+        dealer_request.is_active = False # Rad etilgan so'rov aktiv emas
         dealer_request.save()
         return Response({"detail": "So‘rov rad etildi."}, status=status.HTTP_200_OK)
 

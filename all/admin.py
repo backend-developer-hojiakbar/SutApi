@@ -136,3 +136,4 @@ class DealerRequestAdmin(admin.ModelAdmin):
     list_display = ('id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at')
     list_filter = ('condition', 'status', 'is_active')
     search_fields = ('dealer__username', 'shop__username')
+    readonly_fields = ('status', 'is_active')

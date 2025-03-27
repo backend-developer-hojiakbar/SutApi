@@ -324,14 +324,18 @@ class DealerRequestItemSerializer(serializers.ModelSerializer):
 
 class DealerRequestSerializer(serializers.ModelSerializer):
     items = DealerRequestItemSerializer(many=True)
+
     class Meta:
         model = DealerRequest
-        fields = ['id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at', 'updated_at', 'items']
+        fields = ['id', 'dealer', 'shop', 'condition', 'status', 'total_sum', 'is_active', 'created_at', 'updated_at',
+                  'items']
         extra_kwargs = {
             'id': {'read_only': True},
             'total_sum': {'read_only': True},
             'created_at': {'read_only': True},
             'updated_at': {'read_only': True},
+            'is_active': {'read_only': True},  # is_active ni faqat backend o'zgartirishi kerak
+            'status': {'read_only': True}  # status ni ham faqat backend o'zgartirishi kerak
         }
 
     def validate(self, data):
@@ -353,11 +357,18 @@ class DealerRequestSerializer(serializers.ModelSerializer):
         if not shop_ombor:
             raise serializers.ValidationError("Do‘kon ombori topilmadi.")
 
+        # Diler omborini tekshirish
+        dealer_ombor = Ombor.objects.filter(responsible_person=user).first()
+        if not dealer_ombor:
+            raise serializers.ValidationError("Diler ombori topilmadi.")
+
         for item in items:
             product = item['product']
             quantity = item['quantity']
-            ombor_mahsulot = OmborMahsulot.objects.filter(ombor=shop_ombor, mahsulot=product).first()
-            if not ombor_mahsulot or ombor_mahsulot.soni < quantity:
+
+            # Do'kon omborida yetarli mahsulot bormi tekshirish
+            shop_ombor_mahsulot = OmborMahsulot.objects.filter(ombor=shop_ombor, mahsulot=product).first()
+            if not shop_ombor_mahsulot or shop_ombor_mahsulot.soni < quantity:
                 raise serializers.ValidationError(f"{product.name} uchun do‘kon omborida yetarli mahsulot yo‘q.")
 
         return data
